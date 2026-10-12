@@ -35,6 +35,7 @@ htmlcov/
 # Local databases and results
 *.duckdb
 *.duckdb.wal
+False
 
 # Large Raw Datasets
 data/raw/*.csv
