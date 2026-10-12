@@ -1,0 +1,70 @@
+# Data Pipeline Configuration
+raw_data_dir: "data/raw"
+processed_data_dir: "data/processed"
+dataset_filename: "DataCoSupplyChainDataset.csv"
+access_logs_filename: "tokenized_access_logs.csv"
+description_filename: "DescriptionDataCoSupplyChain.csv"
+encoding: "latin1"
+
+# Feature and Target Settings
+target_column: "Late_delivery_risk"
+date_columns:
+  - "order date (DateOrders)"
+  - "shipping date (DateOrders)"
+categorical_columns:
+  - "Type"
+  - "Delivery Status"
+  - "Category Name"
+  - "Customer City"
+  - "Customer Country"
+  - "Customer Segment"
+  - "Department Name"
+  - "Market"
+  - "Order Region"
+  - "Shipping Mode"
+
+numeric_columns:
+  - "Days for shipping (real)"
+  - "Days for shipment (scheduled)"
+  - "Benefit per order"
+  - "Sales per customer"
+  - "Order Item Discount"
+  - "Order Item Discount Rate"
+  - "Order Item Product Price"
+  - "Order Item Profit Ratio"
+  - "Order Item Quantity"
+  - "Sales"
+  - "Order Item Total"
+
+# Preprocessing & Split
+train_split: 0.8
+val_split: 0.1
+test_split: 0.1
+random_seed: 42
+handle_missing_values: "impute"
+drop_high_cardinality: true
+max_cardinality_levels: 50
+
+# Series Selection & Aggregation Settings
+# (User can configure granularity, category, and market for downstream simulation/forecasting)
+granularity: "daily"              # Options: "daily", "weekly"
+category: "Cleats"                # Chosen processed series (recommended from EDA)
+market: null                      # e.g., "Europe", "LATAM", or null for global/all markets
+rolling_window: 7                 # Rolling mean window for smoothing (e.g., 7 for daily, 4 for weekly)
+eda_dir: "results/eda"
+processed_daily_filename: "demand_daily.parquet"
+processed_weekly_filename: "demand_weekly.parquet"
+
+# Scenario Generation Settings
+scenario_window_length: 40        # Horizon length for scenario simulation (steps/days)
+min_train_history: 90             # Minimum historical steps required before scenario window
+target_mean_demand: 100.0         # Scaling target mean for simulator units
+dominant_period: 7                # Dominant seasonality lag period (weekly pattern in daily data)
+scenarios_output_dir: "results/scenarios"
+
+# Scenario Generation v2 Settings
+shock_level_shift_enabled: true   # Enable injected level shift for shock scenario
+shock_level_shift_multiplier: 1.5 # Multiplier during the shock period (e.g. 1.5x)
+shock_level_shift_duration: 10    # Duration in steps of the sustained level shift
+shock_level_shift_start: 15       # Step index at which the shock level shift begins
+shock_provenance_label: "dataco_window_plus_injected_level_shift_v2"

@@ -1,0 +1,57 @@
+# Experiment & Evaluation Configuration
+experiment_name: "sca_benchmark_experiment"
+description: "Benchmark multi-agent supply chain orchestration against classic (s, S) and heuristic baselines"
+version: "0.1.0"
+tags:
+  - "baseline"
+  - "multi-agent"
+  - "dataco"
+  - "resilience"
+
+# Execution & Storage
+db_path: "results/sca_metrics.duckdb"
+output_dir: "results"
+save_step_artifacts: true
+save_conversation_logs: true
+log_level: "INFO"
+seed: 42
+
+# Execution Grid Dimensions
+scenarios:
+  - "stable"
+  - "seasonal"
+  - "shock"
+seeds: 20                         # Number of random seeds (42..61)
+concurrency:
+  max_workers_non_llm: 8          # Multiprocessing/multithreading pool for fast heuristic baselines
+  max_workers_llm: 2              # Bounded concurrency for LLM agent calls
+
+# Systems to Evaluate
+systems:
+  - id: "baseline_s_S"
+    type: "heuristic"
+    enabled: true
+  - id: "baseline_eoq"
+    type: "heuristic"
+    enabled: true
+  - id: "multi_agent_sca"
+    type: "agentic"
+    enabled: true
+
+# Evaluation Metrics
+metrics:
+  - "service_level"
+  - "fill_rate"
+  - "total_cost"
+  - "holding_cost"
+  - "stockout_cost"
+  - "bullwhip_ratio"
+  - "on_time_in_full_rate"
+  - "agent_latency_p95"
+  - "agent_token_cost"
+
+# Constraints & Thresholds
+constraints:
+  min_service_level: 0.90
+  max_allowable_stockout_units: 500
+  budget_limit_usd: 500000.00

@@ -1,0 +1,72 @@
+simulation_name: dataco_inventory_sim
+time_horizon_days: 40
+step_size_days: 1
+warmup_days: 5
+random_seed: 42
+nodes:
+  suppliers:
+  - id: SUP_01
+    name: Global Supplier Tier 1
+    lead_time_days: 5
+    lead_time_std: 1.2
+    reliability: 0.95
+  - id: SUP_02
+    name: Regional Supplier Tier 2
+    lead_time_days: 3
+    lead_time_std: 0.8
+    reliability: 0.98
+  distribution_centers:
+  - id: DC_EAST
+    name: East Coast Distribution Center
+    capacity_units: 50000
+    initial_inventory: 15000
+  - id: DC_WEST
+    name: West Coast Distribution Center
+    capacity_units: 40000
+    initial_inventory: 12000
+cost_model:
+  holding_cost_per_unit_day: 0.25
+  stockout_penalty_per_unit: 15.0
+  order_placement_fixed_cost: 100.0
+  expedited_shipping_multiplier: 2.5
+  carbon_cost_per_ton_km: 0.05
+default_policy:
+  policy_type: s_S
+  reorder_point: 2000
+  order_up_to: 8000
+  service_level_target: 0.95
+  safety_stock_factor: 1.65
+stochastic_demand: true
+disruption_probability_per_step: 0.02
+disruption_duration_days_max: 4
+late_delivery_penalty_rate: 0.1
+four_echelon:
+  initial_inventory: 687.0
+  initial_backlog: 0.0
+  holding_cost_per_unit: 0.5
+  backlog_cost_multiplier: 10.0
+  backlog_cost_per_unit: 5.0
+  manufacturer_capacity: 300.0
+  history_window: 14
+  default_lead_time: 2
+  late_delivery_delay: 1
+  horizon_steps: 40
+  warmup_steps: 5
+  steady_state_init: true
+  alpha: 0.6
+  rate_limit_delta: 0.5
+  forecast_cap_multiple: 1.5
+  enable_smoothed_target_conflict: false
+  smoothed_target_threshold: 0.25
+  tuning_seeds_used:
+  - 100
+  - 101
+  - 102
+  - 103
+  - 104
+  beta: 0.6
+  safety_factor_z: 2.5
+  tuned_eoq_q_mult: 0.75
+  tuned_eoq_rop_factor: 1.2
+  tuned_ss_s_factor: 1.2
+  tuned_ss_S_factor: 0.25

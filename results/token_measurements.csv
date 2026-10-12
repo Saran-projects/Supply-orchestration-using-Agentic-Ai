@@ -1,0 +1,3 @@
+system,model,steps,decisions,total_calls,cache_hits,measured_avg_input_tokens,measured_avg_output_tokens,estimated_input_tokens,estimated_output_tokens,input_ratio,output_ratio,structured_output_success_rate,fallback_rate,total_cost_usd
+System 3 (Single Agent),glm-isoquant,30,118,118,4,771.0,1039.7,1200,150,0.64,6.93,100.0%,0.0%,$0.066840
+System 6 (Orchestrated),glm-isoquant,30,120,238,0,1176.2,1937.2,16000,1600,0.07,1.21,100.0%,0.0%,$0.124018
