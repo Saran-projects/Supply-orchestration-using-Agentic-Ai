@@ -1,0 +1,112 @@
+{
+  "benchmark_tag": "benchmark-v2-1-frozen",
+  "benchmark_version": "2.1",
+  "canonical_config": {
+    "baseline_parameters": {
+      "oracle": {
+        "lead_time_offset": 4,
+        "policy": "clairvoyant_base_stock"
+      },
+      "system_0_constant": {
+        "source": "training_period_mean"
+      },
+      "system_1_ss_tuned": {
+        "S_factor": 0.25,
+        "s_factor": 1.2
+      },
+      "system_1_ss_untuned": {
+        "S_factor": 1.0,
+        "s_factor": 1.0
+      },
+      "system_2_eoq_tuned": {
+        "order_quantity_multiplier": 0.75,
+        "reorder_point_factor": 1.2
+      },
+      "system_2_eoq_untuned": {
+        "order_quantity_multiplier": 1.0,
+        "reorder_point_factor": 1.0
+      },
+      "system_2b_smoothed_out_tuned": {
+        "alpha": 0.6,
+        "beta": 0.6,
+        "delta": 0.5,
+        "forecast_cap_multiple": 1.5,
+        "z": 2.5
+      },
+      "system_2b_smoothed_out_untuned": {
+        "alpha": 0.8,
+        "beta": 0.8,
+        "delta": 0.5,
+        "forecast_cap_multiple": 1.5,
+        "z": 2.0
+      }
+    },
+    "cost_parameters": {
+      "backlog_cost_multiplier": 10.0,
+      "backlog_cost_per_unit": 5.0,
+      "holding_cost_per_unit": 0.5
+    },
+    "data": {
+      "category": "Cleats",
+      "dataset_filename": "DataCoSupplyChainDataset.csv",
+      "granularity": "daily",
+      "market": null,
+      "random_seed": 42,
+      "rolling_window": 7,
+      "test_split": 0.1,
+      "train_split": 0.8,
+      "val_split": 0.1
+    },
+    "horizon": {
+      "horizon_steps": 40,
+      "warmup_steps": 5
+    },
+    "scenario": {
+      "dominant_period": 7,
+      "min_train_history": 90,
+      "scenario_window_length": 40,
+      "scenarios": [
+        "stable",
+        "seasonal",
+        "shock"
+      ],
+      "shock_level_shift_duration": 10,
+      "shock_level_shift_enabled": true,
+      "shock_level_shift_multiplier": 1.5,
+      "shock_level_shift_start": 15,
+      "shock_provenance_label": "dataco_window_plus_injected_level_shift_v2",
+      "target_mean_demand": 100.0
+    },
+    "seeds": {
+      "test_seeds": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "tuning_seeds": [
+        100,
+        101,
+        102,
+        103,
+        104
+      ]
+    },
+    "sim": {
+      "default_lead_time": 2,
+      "disruption_duration_days_max": 4,
+      "disruption_probability_per_step": 0.02,
+      "initial_backlog": 0.0,
+      "initial_inventory": 687.0,
+      "late_delivery_delay": 1,
+      "manufacturer_capacity": 300.0,
+      "steady_state_init": true
+    }
+  },
+  "config_hash": "6254681d10ba3f73845821bf1a4cecaee8f4d2b198a1dbb72c6bd47fb41e97c5",
+  "git_commit": "e1a4303c20af1630def4994a9383c19f7df8d82c"
+}
