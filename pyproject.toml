@@ -25,6 +25,9 @@ dependencies = [
     "rich>=13.7.0",
 ]
 
+[project.scripts]
+reconcile = "sca.llm.reconcile:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",

@@ -88,11 +88,11 @@ def get_custom_css() -> str:
     return """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
-    
+
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
-    
+
     /* Sleek card containers */
     .sca-card {
         background: rgba(30, 41, 59, 0.7);
@@ -103,7 +103,7 @@ def get_custom_css() -> str:
         backdrop-filter: blur(10px);
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
-    
+
     .sca-metric-box {
         background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -111,14 +111,14 @@ def get_custom_css() -> str:
         padding: 14px 18px;
         text-align: center;
     }
-    
+
     .sca-metric-val {
         font-size: 1.6rem;
         font-weight: 700;
         letter-spacing: -0.02em;
         color: #F8FAFC;
     }
-    
+
     .sca-metric-lbl {
         font-size: 0.8rem;
         font-weight: 500;
@@ -127,7 +127,7 @@ def get_custom_css() -> str:
         color: #94A3B8;
         margin-top: 4px;
     }
-    
+
     /* Scientific banner warning */
     .sca-banner-warning {
         background: linear-gradient(90deg, #78350f, #451a03);
@@ -140,7 +140,7 @@ def get_custom_css() -> str:
         margin: 12px 0 20px 0;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-    
+
     /* Control note banner */
     .sca-banner-info {
         background: linear-gradient(90deg, #1e3a8a, #0f172a);
@@ -152,7 +152,7 @@ def get_custom_css() -> str:
         font-weight: 500;
         margin: 12px 0 20px 0;
     }
-    
+
     /* Chat transcript bubbles */
     .sca-chat-row {
         display: flex;
@@ -160,7 +160,7 @@ def get_custom_css() -> str:
         margin-bottom: 14px;
         gap: 12px;
     }
-    
+
     .sca-chat-avatar {
         font-size: 1.5rem;
         width: 38px;
@@ -173,7 +173,7 @@ def get_custom_css() -> str:
         border: 1px solid rgba(255, 255, 255, 0.15);
         flex-shrink: 0;
     }
-    
+
     .sca-chat-bubble {
         flex-grow: 1;
         background: #1e293b;
@@ -184,7 +184,7 @@ def get_custom_css() -> str:
         font-size: 0.92rem;
         line-height: 1.5;
     }
-    
+
     .sca-chat-header {
         font-weight: 600;
         font-size: 0.85rem;
@@ -193,7 +193,7 @@ def get_custom_css() -> str:
         align-items: center;
         gap: 8px;
     }
-    
+
     .sca-badge {
         font-size: 0.72rem;
         font-weight: 600;
@@ -202,7 +202,7 @@ def get_custom_css() -> str:
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
-    
+
     .sca-collapsible-tool {
         background: rgba(15, 23, 42, 0.8);
         border: 1px dashed rgba(255, 255, 255, 0.15);
@@ -212,7 +212,7 @@ def get_custom_css() -> str:
         font-family: 'Fira Code', monospace;
         font-size: 0.8rem;
     }
-    
+
     /* Code formatting */
     code {
         font-family: 'Fira Code', monospace;

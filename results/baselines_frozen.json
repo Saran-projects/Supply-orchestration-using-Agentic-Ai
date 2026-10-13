@@ -1,0 +1,99 @@
+{
+  "benchmark_version": "v2.1",
+  "tuning_seeds": [
+    100,
+    101,
+    102,
+    103,
+    104
+  ],
+  "scenarios": [
+    "stable",
+    "seasonal",
+    "shock"
+  ],
+  "environment": {
+    "initial_inventory": 687.0,
+    "holding_cost": 0.5,
+    "backlog_cost": 2.5,
+    "horizon": 40,
+    "warmup": 5
+  },
+  "bullwhip_reference": {
+    "eoq_untuned_mean_e2e_bullwhip": 25.532286727190595,
+    "target_75_percent_ceiling": 19.149215045392946
+  },
+  "tuned_policies": {
+    "system_2_eoq": {
+      "parameters": {
+        "order_quantity_multiplier": 0.25,
+        "reorder_point_factor": 1.2
+      },
+      "metrics": {
+        "mean_cost": 21787.711986128415,
+        "mean_fr": 99.92621613597608,
+        "mean_sl": 92.95238095238095,
+        "mean_e2e_bullwhip": 6.638909961766871
+      },
+      "interior_optimum": true,
+      "selection_note": "Feasible Optimum"
+    },
+    "system_1_s_S": {
+      "parameters": {
+        "s_factor": 1.1,
+        "S_factor": 0.25
+      },
+      "metrics": {
+        "mean_cost": 21626.619946035265,
+        "mean_fr": 99.61568103050831,
+        "mean_sl": 89.33333333333333,
+        "mean_e2e_bullwhip": 6.696060583798558
+      },
+      "interior_optimum": true,
+      "selection_note": "Feasible Optimum"
+    },
+    "system_2b_smoothed_out": {
+      "parameters": {
+        "alpha": 0.95,
+        "beta": 0.95,
+        "z": 2.5,
+        "delta": 0.8,
+        "forecast_cap_multiple": 1.2,
+        "info_sharing": true,
+        "include_lead_time_variance": true
+      },
+      "metrics": {
+        "mean_cost": 24351.984333333334,
+        "mean_fr": 99.94500577774019,
+        "mean_sl": 92.76190476190476,
+        "mean_e2e_bullwhip": 8.754959503857432
+      },
+      "interior_optimum": false,
+      "selection_note": "Feasible Optimum"
+    },
+    "system_2c_adaptive_smoothed_out": {
+      "parameters": {
+        "alpha": 0.95,
+        "beta": 0.95,
+        "z": 2.5,
+        "delta": 0.8,
+        "forecast_cap_multiple": 1.2,
+        "beta_shock": 1.0,
+        "delta_shock": 0.8,
+        "shock_duration": 4,
+        "shock_threshold": 1.3,
+        "trend_threshold": 1.15,
+        "info_sharing": true,
+        "include_lead_time_variance": true
+      },
+      "metrics": {
+        "mean_cost": 24289.45766666667,
+        "mean_fr": 99.7177547564531,
+        "mean_sl": 92.19047619047619,
+        "mean_e2e_bullwhip": 8.755394769611067
+      },
+      "interior_optimum": true,
+      "selection_note": "Feasible Optimum"
+    }
+  }
+}

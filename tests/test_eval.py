@@ -80,8 +80,8 @@ def test_runner_grid_and_execution(mini_exp_config, temp_db):
 
 def test_runner_refuses_real_llm_on_config_drift(tmp_path, temp_db, monkeypatch):
     """Verify runner refuses to run real LLMs if manifest hash differs unless allowed."""
-    from sca.config import ModelsConfig
     import sca.eval.runner as runner_mod
+    from sca.config import ModelsConfig
 
     # Configure an agentic system in experiment
     exp_cfg = ExperimentConfig(

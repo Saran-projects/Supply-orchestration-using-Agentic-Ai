@@ -23,9 +23,10 @@ from __future__ import annotations
 import itertools
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -308,16 +309,16 @@ def main():
         for _, sys_label, _, _ in systems_to_eval:
             s_df = sub[sub["system"] == sys_label]
             c_m, c_s = s_df["total_cost"].mean(), s_df["total_cost"].std()
-            h_m, h_s = s_df["holding_cost"].mean(), s_df["holding_cost"].std()
-            b_m, b_s = s_df["backlog_cost"].mean(), s_df["backlog_cost"].std()
+            h_m, _h_s = s_df["holding_cost"].mean(), s_df["holding_cost"].std()
+            b_m, _b_s = s_df["backlog_cost"].mean(), s_df["backlog_cost"].std()
             ret_bw_m, ret_bw_s = s_df["retailer_bullwhip"].mean(), s_df["retailer_bullwhip"].std()
-            who_bw_m, who_bw_s = s_df["wholesaler_bullwhip"].mean(), s_df["wholesaler_bullwhip"].std()
-            dis_bw_m, dis_bw_s = s_df["distributor_bullwhip"].mean(), s_df["distributor_bullwhip"].std()
-            man_bw_m, man_bw_s = s_df["manufacturer_bullwhip"].mean(), s_df["manufacturer_bullwhip"].std()
+            who_bw_m, _who_bw_s = s_df["wholesaler_bullwhip"].mean(), s_df["wholesaler_bullwhip"].std()
+            dis_bw_m, _dis_bw_s = s_df["distributor_bullwhip"].mean(), s_df["distributor_bullwhip"].std()
+            man_bw_m, _man_bw_s = s_df["manufacturer_bullwhip"].mean(), s_df["manufacturer_bullwhip"].std()
             e2e_m, e2e_s = s_df["end_to_end_bullwhip"].mean(), s_df["end_to_end_bullwhip"].std()
             mbw_m, mbw_s = s_df["mean_bullwhip"].mean(), s_df["mean_bullwhip"].std()
             sl_m, sl_s = s_df["service_level"].mean(), s_df["service_level"].std()
-            fr_m, fr_s = s_df["fill_rate"].mean(), s_df["fill_rate"].std()
+            fr_m, _fr_s = s_df["fill_rate"].mean(), s_df["fill_rate"].std()
             so_m, so_s = s_df["stockout_steps"].mean(), s_df["stockout_steps"].std()
 
             rows.append({
@@ -368,7 +369,7 @@ def main():
         "System 2b: Smoothed OUT": ("#2ca02c", "*", 220),
     }
 
-    for ax, sc_name in zip(axes, SCENARIOS):
+    for ax, sc_name in zip(axes, SCENARIOS, strict=False):
         sub = df_final[df_final["scenario"] == sc_name]
         for _, sys_label, _, _ in systems_to_eval:
             s_df = sub[sub["system"] == sys_label]

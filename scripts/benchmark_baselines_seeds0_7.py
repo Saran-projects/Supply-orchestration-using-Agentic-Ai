@@ -16,13 +16,12 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
-import numpy as np
 import pandas as pd
 
 import sca.baselines  # noqa: F401
 from sca.config import get_config
 from sca.data.scenarios import LeadTimeSampler, generate_scenarios
-from sca.sim.environment import ECHELONS, BeerGameEnv
+from sca.sim.environment import BeerGameEnv
 from sca.sim.metrics import compute_simulation_metrics
 from sca.systems.base import get_system
 
@@ -47,7 +46,7 @@ def run_benchmark():
     records: List[Dict[str, Any]] = []
 
     print("=" * 100)
-    print(f"BENCHMARK EVALUATION ON SEEDS 0 TO 7 (8 SEEDS x 3 SCENARIOS x 3 SYSTEMS = 72 RUNS)")
+    print("BENCHMARK EVALUATION ON SEEDS 0 TO 7 (8 SEEDS x 3 SCENARIOS x 3 SYSTEMS = 72 RUNS)")
     print(f"Warm-up: {WARMUP_STEPS} steps | Steady-state initialization: True")
     print("=" * 100)
 

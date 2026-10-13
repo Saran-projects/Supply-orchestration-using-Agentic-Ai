@@ -16,9 +16,10 @@ from __future__ import annotations
 import itertools
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -99,7 +100,7 @@ def main():
     print(f"  Empirical Lead-Time Std (sigma_L): {lt_std:.4f} days")
     print(f"  Late delivery rate:                {base_sc.late_delivery_probability:.4f}")
     print(f"  Lead-Time Variance ON:             sigma_L = {lt_std:.4f}")
-    print(f"  Lead-Time Variance OFF:            sigma_L = 0.0000")
+    print("  Lead-Time Variance OFF:            sigma_L = 0.0000")
     print("=" * 90)
 
     # 2. Benchmark EOQ and (s, S) on Tuning Seeds (100..104)
@@ -130,7 +131,7 @@ def main():
 
     bw_threshold = 0.75 * eoq_mean_bw
 
-    print(f"\n--- TUNING SEED BENCHMARKS (15 runs each) ---")
+    print("\n--- TUNING SEED BENCHMARKS (15 runs each) ---")
     print(f"  System 2 (EOQ):    Cost = ${eoq_mean_cost:,.2f}, Mean Bullwhip = {eoq_mean_bw:.3f}")
     print(f"  System 1 (s, S):   Cost = ${ss_mean_cost:,.2f}, Mean Bullwhip = {ss_mean_bw:.3f}")
     print(f"  SELECTION RULE TARGET: Mean Bullwhip <= 75% of EOQ = {bw_threshold:.3f}")
@@ -148,7 +149,7 @@ def main():
     sweep_records = []
     combo_summaries = []
 
-    for idx, (alpha, beta, z, delta, cap_mult) in enumerate(combos):
+    for _idx, (alpha, beta, z, delta, cap_mult) in enumerate(combos):
         sys_cfg = {
             "alpha": alpha,
             "beta": beta,
@@ -239,15 +240,15 @@ def main():
 
     # 5. Apply Pre-registered Selection Rule
     qualifying = df_sweep[df_sweep["qualifies"]].copy()
-    print(f"\n--- SELECTION RULE EVALUATION ---")
+    print("\n--- SELECTION RULE EVALUATION ---")
     print(f"Total swept configurations: {len(df_sweep)}")
     print(f"Configurations meeting Mean BW <= {bw_threshold:.3f}: {len(qualifying)}")
 
     pareto_frontier = []
     # Identify non-dominated Pareto points (lower cost, lower bullwhip)
-    for i, r in df_sweep.iterrows():
+    for _i, r in df_sweep.iterrows():
         is_dominated = False
-        for j, other in df_sweep.iterrows():
+        for _j, other in df_sweep.iterrows():
             if (other["mean_cost"] <= r["mean_cost"] and other["mean_bullwhip"] <= r["mean_bullwhip"]) and \
                (other["mean_cost"] < r["mean_cost"] or other["mean_bullwhip"] < r["mean_bullwhip"]):
                 is_dominated = True
@@ -280,7 +281,7 @@ def main():
     fig, axes = plt.subplots(1, 3, figsize=(18, 5.5), sharey=False)
     scenarios_titles = ["Stable Scenario", "Seasonal Scenario", "Shock Scenario"]
 
-    for ax, sc_name, title in zip(axes, SCENARIOS, scenarios_titles):
+    for ax, sc_name, title in zip(axes, SCENARIOS, scenarios_titles, strict=False):
         # Sweep points for scenario
         sc_pts = df_sweep[[f"{sc_name}_bw", f"{sc_name}_cost", "alpha", "beta", "delta"]]
         ax.scatter(sc_pts[f"{sc_name}_bw"], sc_pts[f"{sc_name}_cost"], color="lightgray", alpha=0.6, s=30, label="Sweep (System 2b)")

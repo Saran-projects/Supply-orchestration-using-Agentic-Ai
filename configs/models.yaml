@@ -4,8 +4,12 @@ default_provider: "openai_compatible"
 mock_mode: false # Set true for offline unit testing without API keys
 
 opik_enabled: false # Set true for Opik observability tracing
-cache_dir: ".cache/llm" # Local disk cache directory
 max_retries: 3 # Global retry limit for transient network/rate-limit errors
+
+# Fiscal Budget and Spending Caps
+budget_usd: 4.00 # Total authorized credit in USD
+reserve_usd: 0.40 # Safety reserve in USD
+hard_cap_usd: 3.60 # Hard spend ceiling in USD (4.00 credit minus reserve)
 
 # Multi-family Model Registry
 models:
@@ -17,8 +21,10 @@ models:
     temperature: 0.2
     max_tokens: 4096
     timeout_s: 60.0
-    price_per_1k_input: 0.000154 # 2.2x conservative placeholder
-    price_per_1k_output: 0.00044 # 2.2x conservative placeholder
+    price_per_1k_input: 0.000027 # confirmed rate ($0.027 / 1M tokens)
+    price_per_1k_cached_input: 0.000018 # confirmed rate ($0.018 / 1M tokens)
+    price_per_1k_output: 0.00049 # confirmed rate ($0.49 / 1M tokens)
+    reasoning_tokens: "disabled" # optional setting to disable/limit reasoning tokens
     supports_json_schema: true
     enabled: true
     max_concurrency: 10

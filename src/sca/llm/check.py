@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import sys
 import time
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 

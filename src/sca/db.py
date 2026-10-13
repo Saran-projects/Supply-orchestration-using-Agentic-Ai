@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS agent_calls (
     fallback BOOLEAN DEFAULT FALSE,
     order_quantity DOUBLE,
     reasoning TEXT,
+    tool_recommendation DOUBLE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -167,6 +168,10 @@ CREATE TABLE IF NOT EXISTS behavioural_metrics (
     avg_tokens DOUBLE,
     avg_cost_usd DOUBLE,
     avg_latency_ms DOUBLE,
+    recommendation_adoption_rate DOUBLE,
+    mean_recommendation_deviation DOUBLE,
+    recommendation_override_share DOUBLE,
+    tool_mode VARCHAR DEFAULT 'deterministic',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -248,6 +253,7 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         ("fallback", "BOOLEAN DEFAULT FALSE"),
         ("order_quantity", "DOUBLE"),
         ("reasoning", "TEXT"),
+        ("tool_recommendation", "DOUBLE"),
     ]
     for col_name, col_def in columns_to_add:
         try:
@@ -263,6 +269,18 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
     for col_name, col_def in tool_cols_to_add:
         try:
             conn.execute(f"ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS {col_name} {col_def};")
+        except Exception:
+            pass
+
+    bm_cols_to_add = [
+        ("recommendation_adoption_rate", "DOUBLE"),
+        ("mean_recommendation_deviation", "DOUBLE"),
+        ("recommendation_override_share", "DOUBLE"),
+        ("tool_mode", "VARCHAR DEFAULT 'deterministic'"),
+    ]
+    for col_name, col_def in bm_cols_to_add:
+        try:
+            conn.execute(f"ALTER TABLE behavioural_metrics ADD COLUMN IF NOT EXISTS {col_name} {col_def};")
         except Exception:
             pass
 

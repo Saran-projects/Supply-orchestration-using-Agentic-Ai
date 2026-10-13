@@ -326,11 +326,11 @@ def test_resource_consumption_and_cache_hits(temp_db: Path) -> None:
     _insert_run(conn, run_id, model="glm-isoquant")
 
     # glm-isoquant pricing in configs/models.yaml:
-    # price_per_1k_input: 0.000154, price_per_1k_output: 0.00044
+    # price_per_1k_input: 0.000027, price_per_1k_output: 0.000490
     #
-    # Call 1: 1000 prompt, 500 completion -> cost = 1*0.000154 + 0.5*0.00044 = 0.000374
+    # Call 1: 1000 prompt, 500 completion -> cost = 1*0.000027 + 0.5*0.000490 = 0.000272
     # Call 2: 1000 prompt, 500 completion, CACHE HIT -> cost MUST BE 0.0
-    # Call 3: 2000 prompt, 1000 completion -> cost = 2*0.000154 + 1*0.00044 = 0.000748
+    # Call 3: 2000 prompt, 1000 completion -> cost = 2*0.000027 + 1*0.000490 = 0.000544
     calls = [
         ("c1", "glm-isoquant", 1000, 500, 100.0, False, "retailer", 1),
         ("c2", "glm-isoquant", 1000, 500, 5.0, True, "wholesaler", 1),
@@ -353,9 +353,9 @@ def test_resource_consumption_and_cache_hits(temp_db: Path) -> None:
     # 3 distinct decisions -> avg_tokens = 2000.0
     assert avg_tok == pytest.approx(2000.0, abs=1e-2)
 
-    # Total cost: 0.000374 + 0.000000 + 0.000748 = 0.001122 USD
-    # Avg cost: 0.001122 / 3 = 0.000374 USD
-    assert avg_cost == pytest.approx(0.000374, abs=1e-6)
+    # Total cost: 0.000272 + 0.000000 + 0.000544 = 0.000816 USD
+    # Avg cost: 0.000816 / 3 = 0.000272 USD
+    assert avg_cost == pytest.approx(0.000272, abs=1e-6)
 
     # Total latency: 100 + 5 + 200 = 305 ms -> Avg latency = 305 / 3 = 101.67 ms
     assert avg_lat == pytest.approx(101.67, abs=1e-2)

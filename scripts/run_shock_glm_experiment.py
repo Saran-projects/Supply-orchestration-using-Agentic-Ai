@@ -16,9 +16,10 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import duckdb
+
 from sca.config import load_models_config
 from sca.data.scenarios import generate_scenarios
 from sca.db import get_duckdb_connection
@@ -68,15 +69,15 @@ def run_dry_run_projection() -> float:
     print("\n" + "=" * 90)
     print(" 1. DRY-RUN COST PROJECTION (glm-isoquant, shock scenario, 30 steps, seed 42, prompt v2)")
     print("=" * 90)
-    print(f"Rate Card (models.yaml 2.2x placeholder):")
+    print("Rate Card (models.yaml 2.2x placeholder):")
     print(f"  Input Price:  ${p_in:.6f} / 1k tokens (${p_in * 1000:.3f} / 1M)")
     print(f"  Output Price: ${p_out:.6f} / 1k tokens (${p_out * 1000:.3f} / 1M)")
-    print(f"\nSystem 3 (Single Agent):")
+    print("\nSystem 3 (Single Agent):")
     print(f"  Decisions:          {s3_decisions} (30 steps x 4 echelons)")
     print(f"  Avg In / Out Tok:   {s3_avg_in:.1f} / {s3_avg_out:.1f}")
     print(f"  Est. Cost / Dec:    ${s3_cost_per_dec:.6f} USD")
     print(f"  Subtotal Projected: ${s3_projected_usd:.5f} USD")
-    print(f"\nSystem 6 (Orchestrated):")
+    print("\nSystem 6 (Orchestrated):")
     print(f"  Decisions:          {s6_decisions} (30 steps x 4 echelons)")
     print(f"  Avg In / Out Tok:   {s6_avg_in:.1f} / {s6_avg_out:.1f}")
     print(f"  Est. Cost / Dec:    ${s6_cost_per_dec:.6f} USD")
@@ -170,7 +171,7 @@ def ensure_paired_runs(db_path: Path, scenario: Any) -> None:
                     config={"seed": SEED, "model": "mock-model", "prompt_version": PROMPT_VERSION, "enable_negotiation": True},
                 )
 
-            for step_i in range(STEPS_COUNT):
+            for _step_i in range(STEPS_COUNT):
                 states = {e: env_mock.observe(e) for e in ECHELONS}
                 orders = system_instance.decide_orders(states)
                 env_mock.step(orders)
@@ -232,7 +233,6 @@ def run_shock_glm_experiment() -> None:
     session_spend = 0.0
     cap_reached = False
 
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     # -----------------------------------------------------------------------
     # System 3: SingleAgentSystem on shock scenario
@@ -432,7 +432,7 @@ def run_shock_glm_experiment() -> None:
 
     runs_summary = conn.execute(
         """
-        SELECT 
+        SELECT
             r.run_id,
             COALESCE(r.data_source, 'unspecified') as data_src,
             count(a.call_id) as total_calls,

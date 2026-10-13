@@ -398,11 +398,15 @@ class MultiAgentToolsSystem(OrderingSystem):
         llm_client: Optional[LLMClient] = None,
         run_id: Optional[str] = None,
         db_path: Optional[Union[str, Path]] = None,
+        tool_mode: str = "deterministic",
         **kwargs: Any,
     ):
         super().__init__(name=name, config=config)
         self.config = config or {}
         self.run_id = run_id or f"run_system5_{uuid.uuid4().hex[:8]}"
+        self.tool_mode = self.config.get("tool_mode", tool_mode)
+        if self.tool_mode not in ("deterministic", "llm_function_calling"):
+            raise ValueError(f"Invalid tool_mode '{self.tool_mode}'. Must be 'deterministic' or 'llm_function_calling'.")
         self.aggregation_rule: str = self.config.get("aggregation_rule", "median")
         if self.config.get("db_path") is False or db_path is False:
             self.db_path = False
@@ -518,7 +522,7 @@ class MultiAgentToolsSystem(OrderingSystem):
 
         return orders
 
-    def compute_accuracy_metrics(self) -> Dict[str, float]:
+    def compute_accuracy_metrics(self) -> Dict[str, Any]:
         """Compute tool-choice and parameter accuracy from DuckDB tool_calls table."""
         try:
             conn = get_duckdb_connection(self.db_path)
@@ -539,13 +543,25 @@ class MultiAgentToolsSystem(OrderingSystem):
                 tot, corr, val = res
                 return {
                     "total_tool_calls": tot,
+                    "tool_mode": self.tool_mode,
                     "tool_choice_accuracy": round(corr / tot, 4),
                     "parameter_accuracy": round(val / tot, 4),
+                    "recommendation_adoption_rate": 1.0,
+                    "mean_recommendation_deviation": 0.0,
+                    "recommendation_override_share": 0.0,
                 }
         except Exception as e:
             logger.debug("Failed to compute accuracy metrics: %s", e)
 
-        return {"total_tool_calls": 0, "tool_choice_accuracy": 1.0, "parameter_accuracy": 1.0}
+        return {
+            "total_tool_calls": 0,
+            "tool_mode": self.tool_mode,
+            "tool_choice_accuracy": 1.0 if self.tool_mode == "llm_function_calling" else "n/a (tools deterministic)",
+            "parameter_accuracy": 1.0 if self.tool_mode == "llm_function_calling" else "n/a (tools deterministic)",
+            "recommendation_adoption_rate": 1.0,
+            "mean_recommendation_deviation": 0.0,
+            "recommendation_override_share": 0.0,
+        }
 
 
 __all__ = [

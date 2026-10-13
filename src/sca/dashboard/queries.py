@@ -7,16 +7,18 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 import duckdb
 import numpy as np
 import pandas as pd
 
-from sca.eval.behaviour import NUMBER_REGEX, collect_candidate_state_values, extract_numbers_from_text, is_number_grounded
-from sca.sim.metrics import calculate_bullwhip_ratio, calculate_fill_rate
+from sca.eval.behaviour import (
+    extract_numbers_from_text,
+    is_number_grounded,
+)
+from sca.sim.metrics import calculate_bullwhip_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +70,12 @@ def get_available_runs(db_path: Path | str | None = None) -> List[Dict[str, Any]
 
             df = conn.execute(
                 f"""
-                SELECT 
-                    run_id, 
-                    experiment_name, 
-                    status, 
+                SELECT
+                    run_id,
+                    experiment_name,
+                    status,
                     {ds_select},
-                    config, 
+                    config,
                     metadata,
                     created_at,
                     ended_at
@@ -100,7 +102,7 @@ def get_available_runs(db_path: Path | str | None = None) -> List[Dict[str, Any]
             cfg = json.loads(raw_cfg) if isinstance(raw_cfg, str) and raw_cfg else (raw_cfg if isinstance(raw_cfg, dict) else {})
             raw_meta = row["metadata"]
             meta = json.loads(raw_meta) if isinstance(raw_meta, str) and raw_meta else (raw_meta if isinstance(raw_meta, dict) else {})
-            
+
             # Resolve system, scenario, seed, model
             system = cfg.get("system") or meta.get("system") or cfg.get("system_name") or "unknown"
             scenario = cfg.get("scenario") or meta.get("scenario") or "unknown"
@@ -287,14 +289,14 @@ def get_baselines_20seeds_summary(db_path: Path | str | None = None) -> pd.DataF
         conn = get_readonly_connection(target_db)
         try:
             query = """
-            SELECT 
+            SELECT
                 r.run_id,
-                CASE 
+                CASE
                     WHEN r.run_id LIKE '%baseline_s_S%' THEN '(S,s)'
                     WHEN r.run_id LIKE '%baseline_eoq%' THEN 'EOQ'
                     ELSE 'Unknown'
                 END AS policy,
-                CASE 
+                CASE
                     WHEN r.run_id LIKE '%shock%' THEN 'shock'
                     WHEN r.run_id LIKE '%seasonal%' THEN 'seasonal'
                     WHEN r.run_id LIKE '%stable%' THEN 'stable'
@@ -358,7 +360,7 @@ def get_shock_baseline_demand_vs_orders(db_path: Path | str | None = None, seed:
     conn = get_readonly_connection(db_path or DEFAULT_METRICS_DB)
     try:
         query = """
-        SELECT 
+        SELECT
             run_id,
             step_number,
             demand_units,
@@ -418,7 +420,7 @@ def get_glm_real_comparison_metrics(db_path: Path | str | None = None, seed: int
     ]
 
     rows = []
-    for run_id, display_name, data_src, scenario in target_runs:
+    for run_id, display_name, data_src, _scenario in target_runs:
         # Check if run exists in primary or fallback db
         active_db = primary_db
         conn = get_readonly_connection(active_db)
@@ -446,7 +448,7 @@ def get_glm_real_comparison_metrics(db_path: Path | str | None = None, seed: int
         # 3. Fetch call totals & costs from agent_calls
         ac_row = conn.execute(
             """
-            SELECT 
+            SELECT
                 count(*) as calls,
                 count(CASE WHEN cache_hit THEN 1 END) as cache_hits,
                 COALESCE(sum(prompt_tokens), 0) as p_tok,
@@ -579,7 +581,7 @@ def get_decision_details(
     # 1. Orchestrated decision metadata
     od_row = conn.execute(
         """
-        SELECT 
+        SELECT
             decision_id, has_conflict, conflict_type, rounds_used, messages_exchanged,
             resolution_method, final_order, proposals_json, fallback_used, latency_ms, total_tokens
         FROM orchestrated_decisions
@@ -594,7 +596,7 @@ def get_decision_details(
         """
         SELECT message_id, sender, receiver, role, content, metadata, created_at
         FROM messages
-        WHERE run_id = ? 
+        WHERE run_id = ?
           AND (step_id = ? OR step_id = CAST(? AS VARCHAR))
           AND (sender LIKE ? OR receiver LIKE ? OR sender = 'orchestrator' OR receiver = 'orchestrator')
         ORDER BY created_at ASC
@@ -605,7 +607,7 @@ def get_decision_details(
     # 3. Tool calls for this echelon and step
     tc_rows = conn.execute(
         """
-        SELECT 
+        SELECT
             tool_call_id, agent_name, tool_name, input_arguments, output_result,
             is_error, is_correct_tool, is_parameter_valid, duration_ms
         FROM tool_calls
@@ -630,7 +632,7 @@ def get_decision_details(
     # 5. Agent calls for this decision (tokens, latency, cost)
     ac_rows = conn.execute(
         """
-        SELECT 
+        SELECT
             call_id, agent_name, model_name, prompt_tokens, completion_tokens,
             cost_usd, latency_ms, retry_count, fallback, structured_output_ok, reasoning, order_quantity
         FROM agent_calls
@@ -1029,7 +1031,7 @@ def get_aggregate_negotiation_analytics(
         }
 
     total_decisions = len(df)
-    conflicts_df = df[df["has_conflict"] == True]
+    conflicts_df = df[df["has_conflict"]]
     conflict_count = len(conflicts_df)
 
     # Rounds distribution
@@ -1075,13 +1077,13 @@ def get_mock_vs_glm_plumbing_metrics(db_path: Path | str | None = None) -> pd.Da
         try:
             rows = conn.execute(
                 """
-                SELECT 
+                SELECT
                     r.run_id,
-                    CASE 
+                    CASE
                         WHEN r.run_id LIKE '%mock%' THEN 'MockLLM (Scripted Control)'
                         ELSE 'GLM-5.3-Flash (Real Provider)'
                     END AS runner_type,
-                    CASE 
+                    CASE
                         WHEN r.run_id LIKE 's3_%' THEN 'System 3 (Single Agent)'
                         WHEN r.run_id LIKE 's6_%' THEN 'System 6 (Orchestrated)'
                         ELSE 'Other'
@@ -1147,7 +1149,7 @@ def get_cost_and_reconciliation_data(db_path: Path | str | None = None) -> Dict[
         try:
             m_df = conn.execute(
                 """
-                SELECT 
+                SELECT
                     model_name,
                     count(*) AS calls,
                     count(CASE WHEN cache_hit THEN 1 END) AS cache_hits,

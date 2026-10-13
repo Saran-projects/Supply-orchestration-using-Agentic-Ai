@@ -451,7 +451,15 @@ class EvaluationRunner:
                 )
 
             # 4. update runs_registry table
-            cost_val = float(result.summary_metrics.get("cost_usd", result.summary_metrics.get("total_cost", 0.0)))
+            # Compute actual per-run LLM token cost from agent_calls if present
+            llm_cost_row = conn.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM agent_calls WHERE run_id = ?",
+                [result.spec.run_id],
+            ).fetchone()
+            if llm_cost_row and llm_cost_row[0] > 0:
+                cost_val = float(round(llm_cost_row[0], 6))
+            else:
+                cost_val = float(result.summary_metrics.get("cost_usd", 0.0))
             db_mgr.register_run(
                 run_id=result.spec.run_id,
                 system=result.spec.system_id,

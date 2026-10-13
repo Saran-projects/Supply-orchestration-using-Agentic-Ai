@@ -9,19 +9,16 @@ from __future__ import annotations
 
 import itertools
 import logging
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
-import yaml
 
 from sca.config import get_config
 from sca.data.scenarios import generate_scenarios
 from sca.sim.environment import BeerGameEnv
 from sca.sim.metrics import compute_simulation_metrics
 from sca.systems.base import get_system
-import sca.baselines
 
 logging.basicConfig(level=logging.WARNING)
 

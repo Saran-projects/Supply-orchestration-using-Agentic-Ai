@@ -18,8 +18,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from sca.config import AppConfig, get_config

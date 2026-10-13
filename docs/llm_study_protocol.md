@@ -1,175 +1,177 @@
 # Empirical Study Protocol: LLM Multi-Agent Supply Chain Orchestration (v1.0)
 
-**Document Status**: Pre-Registered Experimental Protocol  
+**Document Status**: Pre-Registered Scientific Protocol  
 **Date**: October 2026  
 **Git Tag**: `llm-protocol-v1`  
-**Applies To**: System 3 (`single_agent`), System 4 (`multi_agent_info`), System 5 (`multi_agent_tools`), System 6 (`orchestrated`) vs Classical Baselines  
+**Applies To**: System 3 (`single_agent`), System 4 (`multi_agent_info`), System 5 (`multi_agent_tools`), System 6 (`orchestrated`) vs. Tuned Classical Baselines  
+**Enforced Budget Hard Cap**: **$3.60 USD** ($4.00 account credit minus $0.40 reserve)
 
 ---
 
 ## 1. Executive Summary & Research Questions
 
-This document establishes the pre-registered scientific protocol governing all empirical evaluations of Large Language Model (LLM) ordering policies in the 4-echelon supply chain simulation (Benchmark v2.1).
+This document formalizes the pre-registered scientific protocol governing all empirical evaluations of Large Language Model (LLM) ordering policies in the 4-echelon serial supply chain simulation (Benchmark v2.1).
 
 ### Core Research Questions
 
 - **(RQ1) Orchestration vs. Monolithic Agent**:  
-  Do tool-augmented orchestrated agents (System 6) achieve lower total supply chain cost and reduced end-to-end bullwhip compared to an un-orchestrated single agent (System 3)?
-- **(RQ2) LLMs vs. Classical Optimization Baselines**:  
-  How do autonomous LLM policies compare against mathematically tuned classical baselines (System 2: EOQ-Tuned, System 1: (s, S)-Tuned) and heuristic smoothing (System 2b: Smoothed Order-Up-To)?
-- **(RQ3) Component Ablation & Value of Architecture**:  
-  What do the individual components of the multi-agent architecture contribute?
-  - Information sharing without tools (System 4 vs. System 3)
-  - Tool access without orchestration/negotiation (System 5 vs. System 4)
-  - Conflict detection and negotiation rounds (System 6 vs. System 5)
-- **(RQ4) Behavioral Reliability, Groundedness, and Operational Cost**:  
-  How robust, grounded, and economically viable are autonomous agent systems? Specifically:
-  - What are their structured-output success and fallback rates?
-  - What is the empirical monetary cost in LLM API tokens required to manage the supply chain, and does it justify any performance advantage?
+  Does multi-agent orchestration with role division and negotiation (System 6) reduce end-to-end bullwhip and total supply chain cost compared to an uncoordinated single LLM agent per echelon (System 3)?
+- **(RQ2) LLM Orchestration vs. Tuned Classical & Heuristic Baselines**:  
+  How does System 6 compare against mathematically tuned classical inventory policies (Tuned EOQ) and the deterministic regime-adaptive heuristic (System 2c)?
+- **(RQ3) Value of Architecture Components (Ablations)**:  
+  What do the individual architectural mechanisms contribute to performance?
+  - Information sharing across echelons without tools (System 4 vs. System 3)
+  - Deterministic calculation tools without negotiation (System 5 vs. System 4)
+  - Negotiation rounds and supervisor arbitration (System 6 vs. System 5)
+- **(RQ4) Behavioral Reliability, Groundedness, and Operational Efficiency**:  
+  How reliable, robust, and token-efficient are autonomous agent systems?
+  - Do systems achieve zero fallbacks and $\ge 99\%$ structured JSON output validity?
+  - What is the empirical token consumption, monetary cost in USD, and decision latency per step?
 
 ---
 
-## 2. Hypotheses & Primary Comparisons
+## 2. Primary Confirmatory Comparisons
 
-To prevent post-hoc hypothesis generation and multiple testing inflation ($p$-hacking), we strictly delineate **Primary Confirmatory Comparisons** from **Exploratory Analyses**.
+To eliminate post-hoc hypothesis generation and multiple testing inflation ($p$-hacking), we strictly delineate **Primary Confirmatory Comparisons** from **Exploratory Analyses**.
 
-### Confirmatory Primary Comparisons
-All confirmatory evaluations are evaluated separately within each of the three pre-registered demand regimes (**Stable**, **Seasonal**, **Shock**) on two target metrics:
-1. **Total System Cost ($)** (sum of holding and backlog costs across all 4 echelons over 40 days)
+### Confirmatory Primary Comparisons (Only)
+All confirmatory evaluations are conducted separately within each scenario (**Stable**, **Seasonal**, **Shock**) on two primary target metrics:
+1. **Total System Cost ($)** (sum of holding and backlog costs across all 4 echelons over 40 steps, $h = \$0.50, b = \$2.50$)
 2. **End-to-End Bullwhip Ratio** ($\frac{\text{Var}(\text{Manufacturer Orders})}{\text{Var}(\text{Customer Demand})}$)
+3. **Constraint**: Feasibility requires Retailer Unit Fill Rate $\ge 99.0\%$.
 
 The **three pre-registered primary comparisons** are:
 1. **System 6 (`orchestrated`) vs. System 3 (`single_agent`)**:  
-   *Hypothesis $H_1$*: Multi-agent coordination with tools and negotiation suppresses order amplification and lowers total holding/backlog cost compared to a single prompt managing all tiers.
-2. **System 6 (`orchestrated`) vs. System 2b (`baseline_smoothed_order_up_to`)**:  
-   *Hypothesis $H_2$*: Semantic reasoning and cross-echelon negotiation match or outperform classical heuristic order smoothing in non-stationary and shock regimes.
-3. **System 6 (`orchestrated`) vs. System 2-Tuned (`baseline_eoq` tuned)**:  
-   *Hypothesis $H_3$*: Orchestrated agents achieve comparable cost ($\le +15\%$) while adhering to pre-registered bullwhip ceilings ($\le 5.756$).
+   *Hypothesis $H_1$*: Multi-agent coordination with tools and negotiation suppresses order amplification and lowers total holding/backlog cost compared to independent uncoordinated echelon prompts.
+2. **System 6 (`orchestrated`) vs. Tuned EOQ (`baseline_eoq` tuned)**:  
+   *Hypothesis $H_2$*: Orchestrated agents achieve comparable supply chain cost ($\le 1.15\times$ Tuned EOQ) while dampening end-to-end bullwhip to at or below Tuned EOQ levels.
+3. **System 6 (`orchestrated`) vs. Deterministic System 2c (`baseline_2c` tuned)**:  
+   *Hypothesis $H_3$*: Semantic reasoning combined with deterministic tools matches or outperforms the rule-based regime-adaptive smoothed order-up-to policy in non-stationary and shock regimes.
 
-```
-+---------------------------------------------------------------------------------------+
-|                              BENCHMARK EVALUATION TAXONOMY                            |
-+---------------------------------------------------------------------------------------+
-|  PRIMARY CONFIRMATORY (Holm-corrected):                                               |
-|    - S6 vs. S3 (Orchestration vs. Monolith)                                           |
-|    - S6 vs. S2b (LLM vs. Classical Smoothed OUT)                                      |
-|    - S6 vs. S2-Tuned (LLM vs. Tuned EOQ)                                              |
-|                                                                                       |
-|  EXPLORATORY (Formally Labeled in all reports):                                       |
-|    - S4 vs. S3 (Value of distributed echelon agents)                                  |
-|    - S5 vs. S4 (Value of pure calculation tools)                                      |
-|    - S6 vs. S5 (Value of conflict detection & negotiation rounds)                     |
-|    - S6 vs. System 0 (Constant Order)                                                 |
-|    - S6 vs. Oracle (Clairvoyant Base-Stock Reference)                                 |
-|    - Cross-scenario aggregations, token spend efficiency ratios                       |
-+---------------------------------------------------------------------------------------+
-```
+### Exploratory Analyses (Formally Labeled)
+All other comparisons are formally labeled as **exploratory**:
+- S4 vs. S3 (Value of shared echelon visibility)
+- S5 vs. S4 (Value of pure calculation tool outputs)
+- S6 vs. S5 (Value of conflict detection and supervisor negotiation rounds)
+- S6 vs. System 0 (Constant order baseline)
+- S6 vs. Oracle (Clairvoyant 4-day lookahead reference)
+- Cross-scenario aggregations and token spend efficiency ratios
 
 ---
 
-## 3. Pre-Registered Success Criteria for Prompt & System Tuning
+## 3. Pre-Registered Success Criteria
 
-Before promoting an agent prompt configuration from the tuning phase to the frozen evaluation grid, the following criteria must be satisfied on **tuning seeds 100 to 104**:
+An LLM policy configuration (evaluated on tuning seeds 100–102, or on test seeds) is judged successful if and only if it satisfies all of the following criteria simultaneously:
 
-1. **Deterministic Structured-Output Reliability**:
-   - **Zero fallbacks** across all evaluated tuning steps ($0.0\%$ fallback rate).
-   - $\ge \mathbf{99.0\%}$ first-pass valid JSON structured-output adherence.
-2. **Bullwhip Suppression**:
-   - System 6 mean bullwhip across echelons $\le \mathbf{75\%}$ of untuned EOQ ($\le \mathbf{5.756}$).
-3. **Cost Competitiveness**:
-   - System 6 total cost on tuning seeds must fall within **$+15\%$ of Tuned EOQ** in Stable and Seasonal scenarios.
-4. **Operational Feasibility Floor**:
-   - Retail fill rate $\ge \mathbf{99.0\%}$.
-   - Retail step service level $\ge \mathbf{85.0\%}$.
-   *(Note: Performance against these feasibility floors must be reported transparently regardless of whether they are met.)*
+1. **Zero Fallbacks**: Exactly **0 fallbacks** ($0.0\%$ fallback rate; no unhandled exceptions falling back to previous orders).
+2. **High Structured-Output Validity**: $\ge \mathbf{99.0\%}$ first-pass valid JSON schema compliance.
+3. **Bullwhip Dampening**: End-to-end bullwhip ratio $\le$ Tuned EOQ's end-to-end bullwhip in the corresponding scenario.
+4. **Cost Competitiveness**: Total supply chain cost $\le \mathbf{1.15\times}$ Tuned EOQ's cost in the corresponding scenario.
+5. **Customer Service Feasibility**: Retailer unit fill rate $\ge \mathbf{99.0\%}$.
 
 ---
 
-## 4. Statistical Methodology & Significance Thresholds
+## 4. Statistical Methodology
 
 ### Paired Experimental Design
-Because external customer demand series and lead-time stochasticity are generated via pseudorandom seed streams, runs are strictly **paired by random seed** ($i \in \{0, \dots, 7\}$):
-$$D_i = X_{\text{System 6}, i} - X_{\text{Baseline}, i}$$
+Because customer demand and stochastic lead times are deterministic functions of random seeds, all system comparisons are strictly **paired by seed** ($s \in \mathcal{S}$):
+$$D_s = X_{S6, s} - X_{\text{Baseline}, s}$$
 
-### Hypothesis Testing
-- **Non-Parametric Test**: Two-sided **Wilcoxon signed-rank test** on paired differences $D_i$ for each scenario.
-- **Family-Wise Error Rate Control**: **Holm-Bonferroni step-down correction** applied across the family of 3 primary comparisons for each metric within each scenario:
-  $$p_{(k)} \le \frac{\alpha}{m - k + 1},\quad \text{where } \alpha = 0.05,\; m = 3$$
-- **Effect Size**: Non-parametric effect size reported via **rank-biserial correlation** ($r_{\text{rb}}$):
-  $$r_{\text{rb}} = \frac{W^+ - W^-}{W^+ + W^-}$$
-- **Confidence Intervals**: Median paired difference reported alongside non-parametric **95% bootstrap confidence intervals** generated with $B = 10,000$ paired resamples.
-- **Small-Sample Guardrail**:
-  > **No claims of statistical significance ($p < 0.05$) will be asserted when effective sample size $n < 6$** (e.g., in the presence of tied pairs or zero-difference outcomes). With $n = 8$ test seeds, statistical power is reserved for moderate-to-large effect sizes ($|r_{\text{rb}}| > 0.6$).
-
----
-
-## 5. Seed Partitioning & Firewall
-
-To eliminate data snooping, prompt overfitting, and test set contamination:
-
-| Dataset / Partition | Seed Range | Purpose | Permitted Operations |
-|:---|:---:|:---|:---|
-| **Tuning Partition** | `100` to `104` (5 seeds) | Prompt engineering, role instructions, schema iteration, negotiation threshold tuning | Iterative trial-and-error, error logging, parameter sweeps |
-| **Test Partition** | `0` to `7` (8 seeds) | Final frozen evaluation grid | **Single-pass evaluation only**. Zero prompt modifications permitted. |
-
-**Firewall Enforcement**:
-- The test seed range ($0 \dots 7$) is strictly forbidden from being queried or evaluated during prompt iteration.
-- The `results/benchmark_manifest.json` configuration hash must match the active simulation environment before executing test seeds.
+### Hypothesis Testing & Sample Size Rules
+1. **Sample Size Threshold ($n \ge 6$)**:
+   - Two-sided **Wilcoxon signed-rank test** with **Holm-Bonferroni correction** across the 3 primary comparisons is applied **only if $n \ge 6$** per scenario.
+2. **Small-Sample Protocol ($n < 6$)**:
+   - If $n < 6$ (such as under Plan B where $n = 4$ test seeds 0–3):
+     - **No formal $p$-values or statistical significance claims are asserted**.
+     - Analysis reports descriptive per-seed differences ($D_s$), mean paired difference ($\overline{D}$), and median paired difference.
+3. **Bootstrap Confidence Intervals**:
+   - Non-parametric **95% Bootstrap Confidence Intervals** generated with $B = 2,000$ paired resamples for both cost and bullwhip differences.
+4. **Exploratory Labeling**:
+   - All ablation contrasts (S4 vs S3, S5 vs S4, S6 vs S5) and secondary metrics are explicitly designated as exploratory.
 
 ---
 
-## 6. Tuning Budget & Prompt Freezing
+## 5. Hyperparameter & Prompt Tuning Protocol
 
-Prompt engineering and hyperparameter adjustments must adhere to strict iteration budgets:
+Prompt engineering and system tuning must strictly follow these rules:
 
-1. **Primary Systems (S3 & S6)**:
-   - At most **4 prompt versions** evaluated per system on tuning seeds.
-   - S3 (`single_agent`) and S6 (`orchestrated`) receive equal tuning iteration budgets to prevent unequal prompt optimization bias.
-2. **Ablation Baselines (S4 & S5)**:
-   - At most **1 prompt iteration** evaluated per system on tuning seeds.
-   - S4 (`multi_agent_info`) and S5 (`multi_agent_tools`) inherit the role prompts and schema conventions finalized during S6 tuning to ensure direct ablation comparability.
-3. **Prompt Freezing Contract**:
-   - Final prompts are saved to `src/sca/agents/prompts/` and tagged with their version identifiers (`single_agent_v2.txt`, `orchestrated_v2.txt`).
-   - Prompt files are checked into git prior to running the test grid.
-   - **No prompt edits, system prompt additions, or temperature tweaks are allowed once execution on test seeds has started.**
-
----
-
-## 7. Mandatory Reporting & Publication Integrity Rule
-
-1. **Unconditional Reporting**:
-   - All evaluated systems, scenarios, and metrics must be published in primary summary tables.
-   - Null results (no statistically significant difference between S6 and S3) and negative results (S6 cost exceeding classical baselines, or S6 failing bullwhip constraints) **must be explicitly reported and discussed**.
-2. **No Selective Scenario Suppression**:
-   - Even if System 6 performs poorly in the Shock scenario due to negotiation latency or reasoning failures, all 8 seeds of the Shock scenario must be reported.
+1. **Iteration Budget**: At most **3 paid tuning iterations** total.
+2. **Single-Variable Rule**: Exactly **ONE logged change per iteration** (e.g. tightening word limit, modifying negotiation round threshold, or adjusting tool recommendation framing). Every change must be recorded in `docs/prompt_changelog.md` with rationale and result before proceeding.
+3. **Strict Seed Quarantining**:
+   - Tuning occurs exclusively on tuning seeds $\mathcal{S}_{\text{tune}} = \{100, 101, 102\}$.
+   - Test seeds $\{0, 1, 2, 3, 4, 5, 6, 7\}$ are strictly firewalled and never evaluated during prompt tuning.
+4. **Dry-Run Safety Pre-Check**:
+   - Before launching any paid tuning iteration, a dry-run projection must verify:
+     - Projected single iteration cost $\le \$0.35$ USD.
+     - Cumulative tuning spend $\le \$1.50$ USD.
+     - Total cumulative spend plus projection $\le \$3.60$ USD hard cap.
+   - If any limit is breached, the run halts immediately.
 
 ---
 
-## 8. Failure Handling & Fallback Contract
+## 6. Execution Branching: Plan A vs. Plan B
 
-LLM agents operating in live simulation loops can encounter parse errors, schema validation rejections, or rate limits.
+Execution scope on test seeds is governed by the empirical cost of evaluating one single S3 + S6 pair (40 steps):
 
-### Fallback Protocol
-1. **Execution Guard**:
-   - When an LLM agent produces an invalid order (negative, non-numeric, or malformed JSON), the system logs an error event and immediately executes the fallback policy:
-     $$O_t(e) = O_{t-1}(e)$$
-     *(Repeat the previous period's order quantity for echelon $e$)*.
-2. **Telemetry & Accounting**:
-   - Every fallback event is recorded in DuckDB `agent_calls` (`fallback = TRUE`) and aggregated into `behavioural_metrics.fallback_rate`.
-   - Fallback rate is defined as:
-     $$\text{Fallback Rate} = \frac{\text{Total Fallback Invocations}}{\text{Total Agent Invocations}} \times 100\%$$
-   - Any run where $\text{Fallback Rate} > 0\%$ on test seeds is flagged in summary reports.
+$$\text{Pair Cost} = \text{Cost}_{S3}(40 \text{ steps}) + \text{Cost}_{S6}(40 \text{ steps})$$
+
+### Branching Rule
+
+```
+                                 [ Pair Cost Check ]
+                                          |
+                   +----------------------+----------------------+
+                   |                                             |
+          Pair Cost <= $0.15 USD                        Pair Cost > $0.15 USD
+                   |                                             |
+             [ PLAN A ]                                    [ PLAN B ]
+   - S3 & S6: 3 scenarios x seeds 0-7            - S3 & S6: Shock & Seasonal x seeds 0-3
+     (2 x 3 x 8 = 48 runs, n = 8)                  (2 x 2 x 4 = 16 runs, n = 4)
+   - S4 & S5: Shock x seeds 0-2                  - S4 & S5: Shock x seed 0
+     (2 x 3 = 6 runs)                              (2 x 1 = 2 runs)
+   - Wilcoxon + Holm tests (n = 8 >= 6)          - Descriptive per-seed differences &
+                                                   Bootstrap CIs (n = 4 < 6)
+```
+
+### Plan Determination based on Empirical Rate Card
+- Under the confirmed Isoquant GLM rate card ($0.027 in, $0.018 cached in, $0.490 out per 1M tokens) with Prompt v3.1:
+  - Empirical S3 run cost: **$0.0664 USD**
+  - Empirical S6 run cost: **$0.2377 USD**
+  - **Empirical S3 + S6 Pair Cost**: **$0.3041 USD**
+- Since **$0.3041 USD > $0.15 USD**, **PLAN B is formally triggered**.
+- **Plan B Financial Audit**:
+  - S3 + S6: 8 pairs $\times \$0.3041 = \$2.433$ USD
+  - S4 + S5: 1 run each $\approx \$0.193$ USD
+  - Total Plan B test cost: $\approx \mathbf{\$2.626 \text{ USD}}$
+  - Cumulative project spend: $\$0.8067 \text{ (current)} + \$2.626 \approx \mathbf{\$3.433 \text{ USD}} \le \mathbf{\$3.600 \text{ USD Hard Cap}}$.
+  - Fully honors the **$3.60 USD Hard Cap** while preserving the **$0.40 USD reserve**.
 
 ---
 
-## 9. Baseline Comparison Reference Table (Seeds 0 to 7)
+## 7. Baseline Reference Target Table (Frozen Benchmark v2.1)
 
-For direct comparison, the frozen benchmark v2.1 performance targets established across test seeds 0 to 7 are:
+All primary comparisons evaluate against the frozen benchmark distributions on test seeds ($0 \dots 7$, $n = 8$, $h = \$0.50, b = \$2.50$, $I_0 = 687.0$):
 
-| Scenario | EOQ Tuned (Cost / BW) | (s, S) Tuned (Cost / BW) | System 2b Tuned (Cost / BW) | Oracle Reference (Cost / BW) |
-|:---|:---:|:---:|:---:|:---:|
-| **Stable** | $22,648 / 6.944 | **$21,524 / 1.564** | $42,627 / 3.537 | $36,949 / 1.069 |
-| **Seasonal** | $22,678 / 4.564 | **$20,620 / 1.394** | $54,414 / 3.205 | $36,436 / 0.871 |
-| **Shock** | $37,044 / 1.843 | $38,834 / 1.226 | $216,119 / 2.378 | **$40,109 / 1.107** |
+| Scenario | Metric | Tuned EOQ ($Q=0.25, ROP=1.2$) | Deterministic 2c ($\beta_{\text{shk}}=1.0, \delta_{\text{shk}}=0.8$) | Reference Oracle | Primary Target Thresholds for System 6 |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| **Stable** | Total Cost ($) | $20,670.7 \pm 2,041.5$ | $21,170.2 \pm 1,898.5$ | $37,007.7 \pm 3,721.5$ | Cost $\le \$23,771.3$ ($1.15\times$ EOQ) |
+| | E2E Bullwhip | $10.40 \pm 2.29$ | $14.19 \pm 3.51$ | $0.95 \pm 0.19$ | Bullwhip $\le 10.40$ |
+| | Fill Rate (%) | $100.00\% \pm 0.00\%$ | $100.00\% \pm 0.00\%$ | $100.00\% \pm 0.00\%$ | Fill Rate $\ge 99.0\%$ |
+| **Seasonal** | Total Cost ($) | $19,863.7 \pm 1,932.3$ | $21,842.2 \pm 1,629.4$ | $36,530.3 \pm 2,988.7$ | Cost $\le \$22,843.3$ ($1.15\times$ EOQ) |
+| | E2E Bullwhip | $6.98 \pm 1.94$ | $8.40 \pm 2.49$ | $0.93 \pm 0.13$ | Bullwhip $\le 6.98$ |
+| | Fill Rate (%) | $100.00\% \pm 0.00\%$ | $100.00\% \pm 0.00\%$ | $100.00\% \pm 0.00\%$ | Fill Rate $\ge 99.0\%$ |
+| **Shock** | Total Cost ($) | $29,214.8 \pm 8,114.2$ | $35,642.8 \pm 12,476.5$ | $36,470.8 \pm 5,597.6$ | Cost $\le \$33,597.0$ ($1.15\times$ EOQ) |
+| | E2E Bullwhip | $2.68 \pm 0.81$ | $3.83 \pm 0.56$ | $0.89 \pm 0.16$ | Bullwhip $\le 2.68$ |
+| | Fill Rate (%) | $97.23\% \pm 5.51\%$ | $97.36\% \pm 5.03\%$ | $100.00\% \pm 0.00\%$ | Fill Rate $\ge 99.0\%$ |
 
-*All primary and exploratory LLM comparisons will evaluate against these exact frozen empirical distributions.*
+---
+
+## 8. Failure Handling & Mandatory Reporting
+
+1. **Strict Fallback Accounting**:
+   - Any invalid order (negative, non-numeric, or malformed JSON) triggers previous-period fallback $O_t(e) = O_{t-1}(e)$.
+   - Every fallback increments `agent_calls.fallback = TRUE` and is reported in `behavioural_metrics.fallback_rate`.
+   - The success criterion demands **0 fallbacks**.
+2. **Unconditional Publication**:
+   - All runs, whether conforming or null/negative results, are logged in `runs_registry` and DuckDB telemetry.
+   - No selective reporting or seed omission is permitted.

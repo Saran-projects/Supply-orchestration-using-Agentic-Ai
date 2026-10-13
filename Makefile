@@ -40,7 +40,7 @@ dashboard:
 	$(PYTHON) scripts/run_sim.py --mode dashboard
 
 reconcile:
-	$(PYTHON) -m sca.llm.reconcile
+	$(PYTHON) -m sca.llm.reconcile --recompute
 
 clean:
 	$(PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]; [p.unlink() for p in pathlib.Path('.').rglob('*.pyc')]"

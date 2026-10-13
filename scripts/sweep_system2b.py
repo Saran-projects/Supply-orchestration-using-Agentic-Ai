@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -90,7 +91,7 @@ def run_sweep() -> pd.DataFrame:
                 )
                 states = env.reset(seed=seed)
 
-                for t in range(len(sc.demand)):
+                for _t in range(len(sc.demand)):
                     orders = system.decide_orders(states)
                     states = env.step(orders)
 

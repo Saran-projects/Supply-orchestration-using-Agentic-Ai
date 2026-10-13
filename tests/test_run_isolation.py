@@ -14,8 +14,6 @@ from sca.data.scenarios import generate_scenarios
 from sca.sim.environment import BeerGameEnv
 from sca.sim.metrics import compute_simulation_metrics
 from sca.systems.base import get_system
-import sca.baselines  # ensure registration
-import sca.systems    # ensure registration
 
 REGISTERED_SYSTEM_IDS = [
     "baseline_constant",

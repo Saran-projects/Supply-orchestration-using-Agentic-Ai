@@ -8,7 +8,7 @@ import math
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -20,6 +20,14 @@ from sca.tools.schemas import (
     EoqQuantityOutput,
     ForecastDemandInput,
     ForecastDemandOutput,
+    OrderUpToTargetInput,
+    OrderUpToTargetOutput,
+    RegimeDetectorInput,
+    RegimeDetectorOutput,
+    SmoothedForecastInput,
+    SmoothedForecastOutput,
+    SmoothedOrderInput,
+    SmoothedOrderOutput,
     SmoothedOrderUpToInput,
     SmoothedOrderUpToOutput,
     SsPolicyOrderInput,
@@ -358,6 +366,25 @@ def ss_policy_order(
 
 
 # ---------------------------------------------------------------------------
+# 3b. safe_order_range
+# ---------------------------------------------------------------------------
+def safe_order_range(
+    o_prev: float,
+    d_hat: float,
+    delta: float,
+) -> Tuple[float, float]:
+    """Calculate safe order range around previous order scaled by max(o_prev, d_hat).
+
+    [max(0.0, o_prev - delta * max(o_prev, d_hat)), o_prev + delta * max(o_prev, d_hat)]
+    Guarantees the safe order range never collapses when o_prev == 0 (as long as d_hat > 0).
+    """
+    scale = max(float(o_prev), float(d_hat))
+    low = max(0.0, float(o_prev) - float(delta) * scale)
+    high = float(o_prev) + float(delta) * scale
+    return (float(low), float(high))
+
+
+# ---------------------------------------------------------------------------
 # 4. validate_order
 # ---------------------------------------------------------------------------
 def validate_order(
@@ -410,19 +437,24 @@ def validate_order(
 
         interventions: List[str] = []
 
-        # 1. Non-negative / minimum order check
-        if val < inp.min_order:
-            msg = f"Proposed order {val:.1f} is below minimum allowed threshold {inp.min_order:.1f}."
+        # 1. Non-negative / minimum order check (Hard bound lower: min_order >= 0)
+        min_bound = max(0.0, float(inp.min_order))
+        if val < min_bound:
+            msg = f"Proposed order {val:.1f} is below minimum allowed threshold {min_bound:.1f}."
             violations.append(msg)
             interventions.append(msg)
-            val = float(inp.min_order)
+            logger.info("validate_order clip: %.2f -> %.2f (%s)", val, min_bound, msg)
+            val = min_bound
             adjustments_made = True
 
-        # 2. Rate limiting check (relative to last_order)
+        # 2. Rate limiting check (Smoothing band via shared function safe_order_range)
         if eff_delta is not None and inp.last_order is not None:
-            ref_d = inp.forecast_demand if (inp.forecast_demand is not None and inp.forecast_demand > 0) else max(inp.last_order, 1.0)
-            max_allowed = inp.last_order + (eff_delta * ref_d)
-            min_allowed = max(0.0, inp.last_order - (eff_delta * ref_d))
+            ref_d = (
+                inp.forecast_demand
+                if (inp.forecast_demand is not None and inp.forecast_demand > 0)
+                else max(inp.last_order, 1.0)
+            )
+            min_allowed, max_allowed = safe_order_range(inp.last_order, ref_d, eff_delta)
             if val > max_allowed:
                 msg = (
                     f"Rate limit intervention: proposed order {val:.1f} clipped to upper limit "
@@ -430,7 +462,7 @@ def validate_order(
                 )
                 violations.append(msg)
                 interventions.append(msg)
-                logger.debug(msg)
+                logger.info("validate_order clip: %.2f -> %.2f (%s)", val, max_allowed, msg)
                 val = max_allowed
                 adjustments_made = True
             elif val < min_allowed:
@@ -440,7 +472,7 @@ def validate_order(
                 )
                 violations.append(msg)
                 interventions.append(msg)
-                logger.debug(msg)
+                logger.info("validate_order clip: %.2f -> %.2f (%s)", val, min_allowed, msg)
                 val = min_allowed
                 adjustments_made = True
 
@@ -454,15 +486,16 @@ def validate_order(
                 )
                 violations.append(msg)
                 interventions.append(msg)
-                logger.debug(msg)
+                logger.info("validate_order clip: %.2f -> %.2f (%s)", val, cap_val, msg)
                 val = cap_val
                 adjustments_made = True
 
-        # 4. Capacity limit constraint (e.g. manufacturer production capacity)
+        # 4. Capacity limit constraint (Hard bound upper: 0..capacity)
         if inp.capacity_limit is not None and val > inp.capacity_limit:
             msg = f"Capacity intervention: proposed order {val:.1f} exceeds facility capacity limit of {inp.capacity_limit:.1f} units."
             violations.append(msg)
             interventions.append(msg)
+            logger.info("validate_order clip: %.2f -> %.2f (%s)", val, inp.capacity_limit, msg)
             val = float(inp.capacity_limit)
             adjustments_made = True
 
@@ -471,6 +504,7 @@ def validate_order(
             msg = f"Proposed order {val:.1f} exceeds maximum order policy threshold of {inp.max_order:.1f} units."
             violations.append(msg)
             interventions.append(msg)
+            logger.info("validate_order clip: %.2f -> %.2f (%s)", val, inp.max_order, msg)
             val = float(inp.max_order)
             adjustments_made = True
 
@@ -615,3 +649,292 @@ def smoothed_order_up_to(
         )
 
     return output
+
+
+# ---------------------------------------------------------------------------
+# 6. smoothed_forecast
+# ---------------------------------------------------------------------------
+def smoothed_forecast(
+    params: Union[SmoothedForecastInput, Dict[str, Any]],
+    db_path: Optional[Union[str, Path]] = None,
+    run_id: Optional[str] = None,
+    step_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    expected_tool: Optional[str] = None,
+    is_correct_tool: Optional[bool] = None,
+    is_parameter_valid: Optional[bool] = None,
+    **kwargs: Any,
+) -> SmoothedForecastOutput:
+    """Calculate exponential smoothing demand forecast with parameter alpha."""
+    start_time = time.time()
+    inp = params if isinstance(params, SmoothedForecastInput) else SmoothedForecastInput.model_validate(params)
+    inp_dict = inp.model_dump()
+    is_error = False
+    error_msg = None
+    output: Optional[SmoothedForecastOutput] = None
+
+    try:
+        alpha = float(inp.alpha)
+        if inp.previous_smoothed_demand is not None:
+            sm = (alpha * float(inp.current_demand)) + ((1.0 - alpha) * float(inp.previous_smoothed_demand))
+        else:
+            sm = float(inp.current_demand)
+        sm = max(0.0, sm)
+
+        output = SmoothedForecastOutput(
+            smoothed_demand=round(sm, 2),
+            current_demand=round(float(inp.current_demand), 2),
+            alpha=round(alpha, 4),
+        )
+    except Exception as e:
+        is_error = True
+        error_msg = str(e)
+        logger.exception("Error in smoothed_forecast: %s", e)
+        raise e
+    finally:
+        elapsed_ms = (time.time() - start_time) * 1000.0
+        out_dict = output.model_dump() if output else {}
+        log_tool_to_duckdb(
+            tool_name="smoothed_forecast",
+            input_args=inp_dict,
+            output_result=out_dict,
+            duration_ms=elapsed_ms,
+            is_error=is_error,
+            error_message=error_msg,
+            run_id=run_id,
+            step_id=step_id,
+            agent_name=agent_name,
+            db_path=db_path,
+            expected_tool=expected_tool or "smoothed_forecast",
+            is_correct_tool=is_correct_tool,
+            is_parameter_valid=is_parameter_valid,
+        )
+
+    return output
+
+
+# ---------------------------------------------------------------------------
+# 7. order_up_to_target
+# ---------------------------------------------------------------------------
+def order_up_to_target(
+    params: Union[OrderUpToTargetInput, Dict[str, Any]],
+    db_path: Optional[Union[str, Path]] = None,
+    run_id: Optional[str] = None,
+    step_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    expected_tool: Optional[str] = None,
+    is_correct_tool: Optional[bool] = None,
+    is_parameter_valid: Optional[bool] = None,
+    **kwargs: Any,
+) -> OrderUpToTargetOutput:
+    """Calculate base-stock target level S = L * d_hat + SS using lead-time demand variance."""
+    start_time = time.time()
+    inp = params if isinstance(params, OrderUpToTargetInput) else OrderUpToTargetInput.model_validate(params)
+    inp_dict = inp.model_dump()
+    is_error = False
+    error_msg = None
+    output: Optional[OrderUpToTargetOutput] = None
+
+    try:
+        L = max(0.0, float(inp.lead_time_mean))
+        sigma_L = max(0.0, float(inp.lead_time_std)) if inp.include_lead_time_variance else 0.0
+        sigma_d = max(0.0, float(inp.demand_std))
+        d_hat = max(0.0, float(inp.forecast_demand))
+        z = float(inp.z)
+
+        var_ltd = (L * (sigma_d ** 2)) + ((d_hat ** 2) * (sigma_L ** 2))
+        sigma_ltd = math.sqrt(max(1.0, var_ltd))
+        safety_stock = z * sigma_ltd
+        ltd_mean = L * d_hat
+        target_S = ltd_mean + safety_stock
+
+        output = OrderUpToTargetOutput(
+            order_up_to_target=round(target_S, 2),
+            safety_stock=round(safety_stock, 2),
+            sigma_ltd=round(sigma_ltd, 2),
+            expected_lead_time_demand=round(ltd_mean, 2),
+        )
+    except Exception as e:
+        is_error = True
+        error_msg = str(e)
+        logger.exception("Error in order_up_to_target: %s", e)
+        raise e
+    finally:
+        elapsed_ms = (time.time() - start_time) * 1000.0
+        out_dict = output.model_dump() if output else {}
+        log_tool_to_duckdb(
+            tool_name="order_up_to_target",
+            input_args=inp_dict,
+            output_result=out_dict,
+            duration_ms=elapsed_ms,
+            is_error=is_error,
+            error_message=error_msg,
+            run_id=run_id,
+            step_id=step_id,
+            agent_name=agent_name,
+            db_path=db_path,
+            expected_tool=expected_tool or "order_up_to_target",
+            is_correct_tool=is_correct_tool,
+            is_parameter_valid=is_parameter_valid,
+        )
+
+    return output
+
+
+# ---------------------------------------------------------------------------
+# 8. smoothed_order
+# ---------------------------------------------------------------------------
+def smoothed_order(
+    params: Union[SmoothedOrderInput, Dict[str, Any]],
+    db_path: Optional[Union[str, Path]] = None,
+    run_id: Optional[str] = None,
+    step_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    expected_tool: Optional[str] = None,
+    is_correct_tool: Optional[bool] = None,
+    is_parameter_valid: Optional[bool] = None,
+    **kwargs: Any,
+) -> SmoothedOrderOutput:
+    """Calculate smoothed order with parameter beta: beta * raw + (1 - beta) * last_order."""
+    start_time = time.time()
+    inp = params if isinstance(params, SmoothedOrderInput) else SmoothedOrderInput.model_validate(params)
+    inp_dict = inp.model_dump()
+    is_error = False
+    error_msg = None
+    output: Optional[SmoothedOrderOutput] = None
+
+    try:
+        raw_order = max(0.0, float(inp.order_up_to_target) - float(inp.inventory_position))
+        beta = float(inp.beta)
+        sm_order = (beta * raw_order) + ((1.0 - beta) * float(inp.last_order))
+        sm_order = max(0.0, sm_order)
+
+        output = SmoothedOrderOutput(
+            smoothed_order=round(sm_order, 2),
+            raw_order=round(raw_order, 2),
+            beta=round(beta, 4),
+            inventory_position=round(float(inp.inventory_position), 2),
+        )
+    except Exception as e:
+        is_error = True
+        error_msg = str(e)
+        logger.exception("Error in smoothed_order: %s", e)
+        raise e
+    finally:
+        elapsed_ms = (time.time() - start_time) * 1000.0
+        out_dict = output.model_dump() if output else {}
+        log_tool_to_duckdb(
+            tool_name="smoothed_order",
+            input_args=inp_dict,
+            output_result=out_dict,
+            duration_ms=elapsed_ms,
+            is_error=is_error,
+            error_message=error_msg,
+            run_id=run_id,
+            step_id=step_id,
+            agent_name=agent_name,
+            db_path=db_path,
+            expected_tool=expected_tool or "smoothed_order",
+            is_correct_tool=is_correct_tool,
+            is_parameter_valid=is_parameter_valid,
+        )
+
+    return output
+
+
+# ---------------------------------------------------------------------------
+# 9. regime_detector
+# ---------------------------------------------------------------------------
+def regime_detector(
+    params: Union[RegimeDetectorInput, Dict[str, Any]],
+    db_path: Optional[Union[str, Path]] = None,
+    run_id: Optional[str] = None,
+    step_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    expected_tool: Optional[str] = None,
+    is_correct_tool: Optional[bool] = None,
+    is_parameter_valid: Optional[bool] = None,
+    **kwargs: Any,
+) -> RegimeDetectorOutput:
+    """Detect demand regime: 'stable' | 'trend' | 'shock' using short/long mean ratio and CUSUM."""
+    start_time = time.time()
+    inp = params if isinstance(params, RegimeDetectorInput) else RegimeDetectorInput.model_validate(params)
+    inp_dict = inp.model_dump()
+    is_error = False
+    error_msg = None
+    output: Optional[RegimeDetectorOutput] = None
+
+    try:
+        hist = [float(x) for x in inp.demand_history]
+        n = len(hist)
+        sw = inp.short_window
+        lw = min(inp.long_window, n)
+
+        if n < sw:
+            m = float(np.mean(hist)) if n > 0 else 100.0
+            output = RegimeDetectorOutput(
+                regime="stable",
+                confidence=1.0,
+                short_mean=round(m, 2),
+                long_mean=round(m, 2),
+                ratio=1.0,
+                details={"status": "insufficient_history", "samples": n},
+            )
+        else:
+            short_mean = float(np.mean(hist[-sw:]))
+            long_mean = float(np.mean(hist[-lw:]))
+            long_safe = max(long_mean, 1e-4)
+            ratio = short_mean / long_safe
+
+            std_w = max(float(np.std(hist[-lw:])), 1.0)
+            cusum_z = abs(short_mean - long_mean) / (std_w / math.sqrt(sw))
+
+            if ratio >= inp.shock_threshold or ratio <= (1.0 / inp.shock_threshold):
+                regime = "shock"
+                confidence = min(1.0, max(0.5, abs(ratio - 1.0) / (inp.shock_threshold - 1.0)))
+            elif ratio >= inp.trend_threshold or ratio <= (1.0 / inp.trend_threshold):
+                regime = "trend"
+                confidence = min(1.0, max(0.5, abs(ratio - 1.0) / (inp.trend_threshold - 1.0)))
+            else:
+                regime = "stable"
+                confidence = min(1.0, max(0.5, 1.0 - abs(ratio - 1.0)))
+
+            output = RegimeDetectorOutput(
+                regime=regime,
+                confidence=round(confidence, 4),
+                short_mean=round(short_mean, 2),
+                long_mean=round(long_mean, 2),
+                ratio=round(ratio, 4),
+                details={
+                    "cusum_z_score": round(cusum_z, 2),
+                    "history_length": n,
+                    "short_window": sw,
+                    "long_window": lw,
+                },
+            )
+    except Exception as e:
+        is_error = True
+        error_msg = str(e)
+        logger.exception("Error in regime_detector: %s", e)
+        raise e
+    finally:
+        elapsed_ms = (time.time() - start_time) * 1000.0
+        out_dict = output.model_dump() if output else {}
+        log_tool_to_duckdb(
+            tool_name="regime_detector",
+            input_args=inp_dict,
+            output_result=out_dict,
+            duration_ms=elapsed_ms,
+            is_error=is_error,
+            error_message=error_msg,
+            run_id=run_id,
+            step_id=step_id,
+            agent_name=agent_name,
+            db_path=db_path,
+            expected_tool=expected_tool or "regime_detector",
+            is_correct_tool=is_correct_tool,
+            is_parameter_valid=is_parameter_valid,
+        )
+
+    return output
+

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List
 
 import streamlit as st
@@ -17,7 +16,7 @@ def render_decision_chat_transcript(decision_data: Dict[str, Any]) -> None:
     step_num = decision_data["step_number"]
     has_conflict = decision_data["has_conflict"]
     conflict_type = decision_data["conflict_type"]
-    rounds_used = decision_data["rounds_used"]
+    decision_data["rounds_used"]
     final_order = decision_data["final_order"]
     proposals = decision_data["proposals"]
     tools = decision_data["tools"]
@@ -35,10 +34,10 @@ def render_decision_chat_transcript(decision_data: Dict[str, Any]) -> None:
                     <div class="sca-chat-header" style="color: #94A3B8;">
                         Environment Telemetry &middot; {echelon} (Step {step_num})
                     </div>
-                    <strong>Observed State:</strong> Current Demand = <code>{state['current_demand']:.1f}</code> | 
-                    On-Hand Inventory = <code>{state['inventory']:.1f}</code> | 
-                    Backlog = <code>{state['backlog']:.1f}</code> | 
-                    Pipeline = <code>{state['pipeline']:.1f}</code> | 
+                    <strong>Observed State:</strong> Current Demand = <code>{state['current_demand']:.1f}</code> |
+                    On-Hand Inventory = <code>{state['inventory']:.1f}</code> |
+                    Backlog = <code>{state['backlog']:.1f}</code> |
+                    Pipeline = <code>{state['pipeline']:.1f}</code> |
                     Capacity Ceiling = <code>{state['capacity']:.1f}</code>
                 </div>
             </div>
@@ -48,7 +47,7 @@ def render_decision_chat_transcript(decision_data: Dict[str, Any]) -> None:
 
     # 2. Agent Proposals & Collapsible Tool Calls
     is_s3 = "s3" in str(decision_data.get("run_id", "")).lower() or "single" in str(decision_data.get("run_id", "")).lower()
-    
+
     if is_s3:
         st.markdown("#### 2. Single Agent Replenishment Decision")
         st.markdown(
@@ -177,9 +176,9 @@ def render_decision_chat_transcript(decision_data: Dict[str, Any]) -> None:
     if not messages:
         st.info("No inter-agent negotiation messages exchanged for this decision (consensus consensus order applied directly).")
     else:
-        for idx, m in enumerate(messages):
+        for _idx, m in enumerate(messages):
             sender = m["sender"]
-            role = m["role"]
+            m["role"]
             content = m["content"]
             rnd = m.get("round", 1)
             style = get_agent_style(sender)
@@ -208,9 +207,9 @@ def render_decision_chat_transcript(decision_data: Dict[str, Any]) -> None:
         st.markdown(
             f"""
             <div class="sca-card" style="border-left: 4px solid #10B981;">
-                <strong>Tool:</strong> <code>validate_order</code> &middot; 
+                <strong>Tool:</strong> <code>validate_order</code> &middot;
                 <strong>Status:</strong> {'Valid' if not vt['is_error'] else 'Adjusted / Fallback'} &middot;
-                <strong>Proposed:</strong> <code>{vt['inputs'].get('proposed_order', 'N/A')}</code> &rarr; 
+                <strong>Proposed:</strong> <code>{vt['inputs'].get('proposed_order', 'N/A')}</code> &rarr;
                 <strong>Validated Output:</strong> <code>{vt['outputs'].get('validated_order', 'N/A')}</code>
             </div>
             """,
@@ -291,7 +290,7 @@ def export_transcript_to_markdown(decision_data: Dict[str, Any]) -> str:
     messages = decision_data["messages"]
 
     lines = [
-        f"# SupplyChain Multi-Agent Decision Transcript",
+        "# SupplyChain Multi-Agent Decision Transcript",
         f"- **Echelon:** {ech}",
         f"- **Simulation Step:** {step}",
         f"- **Conflict Status:** {decision_data['conflict_type']} ({'Yes' if decision_data['has_conflict'] else 'No'})",

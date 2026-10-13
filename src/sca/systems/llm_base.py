@@ -17,6 +17,7 @@ from sca.db import get_duckdb_connection
 from sca.llm.client import LLMClient, StructuredOutputError, calculate_cost
 from sca.sim.environment import ECHELONS, EchelonHistoryRecord, EchelonState
 from sca.systems.base import OrderingSystem
+from sca.tools import safe_order_range
 
 logger = logging.getLogger(__name__)
 
@@ -92,14 +93,20 @@ class LLMOrderingSystemBase(OrderingSystem):
         llm_client: Optional[LLMClient] = None,
         run_id: Optional[str] = None,
         db_path: Optional[Union[str, Path]] = None,
-        prompt_version: str = "v1",
+        prompt_version: str = "v3",
+        tool_mode: str = "deterministic",
         **kwargs: Any,
     ):
         super().__init__(name=name, config=config)
         self.config = config or {}
         self.run_id = run_id or f"run_{self.name}_{uuid.uuid4().hex[:8]}"
         self.db_path = db_path
-        self.prompt_version = prompt_version
+        self.prompt_version = self.config.get("prompt_version", prompt_version)
+        self.tool_mode = self.config.get("tool_mode", tool_mode)
+        if self.tool_mode not in ("deterministic", "llm_function_calling"):
+            raise ValueError(
+                f"Invalid tool_mode '{self.tool_mode}'. Must be 'deterministic' or 'llm_function_calling'."
+            )
         self.seed: Optional[int] = self.config.get("seed", 42)
         self.use_cache: bool = self.config.get("use_cache", False)
         self.model_name: Optional[str] = self.config.get("model", None)
@@ -137,12 +144,117 @@ class LLMOrderingSystemBase(OrderingSystem):
                 return 300.0
         return float(self.config.get("max_order", 500.0))
 
+    def compute_deterministic_tools(self, state: EchelonState, echelon: str) -> Dict[str, Any]:
+        """Execute deterministic analytical tools in code to provide baselines for LLM decision.
+
+        Implements 'deterministic tools plus LLM decision and negotiation':
+        1. forecast_demand: point forecast on observed demand history
+        2. eoq_quantity: Wilson EOQ batch sizing
+        3. smoothed_order_up_to: heuristic order-up-to target with safety buffer
+        4. safe_range: feasible order bounds based on capacity and rate limits
+        5. recommendation: primary tool recommendation (smoothed target bounded in safe range)
+        """
+        import numpy as np
+
+        from sca.tools import (
+            EoqQuantityInput,
+            ForecastDemandInput,
+            SmoothedOrderUpToInput,
+            eoq_quantity,
+            forecast_demand,
+            smoothed_order_up_to,
+        )
+
+        # 1. Last 5 orders
+        if state.history_window:
+            last_5 = [round(float(h.order_placed), 1) for h in state.history_window[-5:]]
+        else:
+            last_5 = [round(float(state.last_order), 1)]
+
+        # Demand series
+        if state.history_window:
+            hist_d = [float(h.demand) for h in state.history_window]
+        else:
+            hist_d = [float(state.current_demand)]
+
+        # 2. Forecast demand
+        try:
+            fc_out = forecast_demand(
+                ForecastDemandInput(recent_history=hist_d, horizon=1, model_type="linear"),
+                db_path=False,
+            )
+            pt_forecast = max(0.0, float(fc_out.point_forecast))
+        except Exception:
+            pt_forecast = float(state.current_demand)
+
+        # 3. EOQ
+        mean_d = max(1.0, float(np.mean(hist_d)))
+        h_cost = float(self.config.get("holding_cost_per_unit", 0.50))
+        k_cost = float(self.config.get("order_fixed_cost", 100.0))
+        try:
+            eoq_out = eoq_quantity(
+                EoqQuantityInput(
+                    mean_demand=mean_d,
+                    order_fixed_cost=k_cost,
+                    holding_cost_per_unit=h_cost,
+                ),
+                db_path=False,
+            )
+            eoq_val = float(eoq_out.eoq)
+        except Exception:
+            eoq_val = mean_d
+
+        # 4. Smoothed order-up-to target
+        alpha = float(self.config.get("alpha", 0.6))
+        beta = float(self.config.get("beta", alpha))
+        z = float(self.config.get("safety_factor_z", 1.65))
+        std_d = float(np.std(hist_d)) if len(hist_d) > 1 else 20.0
+        try:
+            sm_out = smoothed_order_up_to(
+                SmoothedOrderUpToInput(
+                    current_demand=float(state.current_demand),
+                    inventory=float(state.inventory),
+                    pipeline=float(state.pipeline),
+                    backlog=float(state.backlog),
+                    last_order=float(state.last_order),
+                    lead_time_mean=float(state.lead_time),
+                    lead_time_std=0.8,
+                    demand_std=std_d,
+                    safety_stock_factor=z,
+                    z=z,
+                    alpha=alpha,
+                    beta=beta,
+                ),
+                db_path=False,
+            )
+            smoothed_target = max(0.0, float(sm_out.order_quantity))
+        except Exception:
+            smoothed_target = float(state.current_demand)
+
+        # 5. Safe range & recommendation
+        cap = self.get_max_order(echelon)
+        delta = float(self.config.get("rate_limit_delta", 0.5))
+        min_safe, max_safe = safe_order_range(float(state.last_order), float(pt_forecast), delta)
+        max_safe = min(cap, max_safe)
+
+        rec_target = min(cap, max(min_safe, smoothed_target))
+
+        return {
+            "last_5_orders": last_5,
+            "forecast": round(pt_forecast, 1),
+            "eoq": round(eoq_val, 1),
+            "smoothed_target": round(smoothed_target, 1),
+            "recommendation": round(rec_target, 1),
+            "safe_range": (round(min_safe, 1), round(max_safe, 1)),
+        }
+
     def _execute_echelon_decision(
         self,
         echelon: str,
         state: EchelonState,
         prompt: str,
         max_order: float,
+        recommendation: Optional[float] = None,
     ) -> Tuple[float, str]:
         """Execute LLM decision for an echelon with 1-retry and fallback policy.
 
@@ -152,6 +264,7 @@ class LLMOrderingSystemBase(OrderingSystem):
         start_time = time.time()
         total_p_tok = 0
         total_c_tok = 0
+        total_cached_tok = 0
         retry_count = 0
         fallback = False
         final_order = 0.0
@@ -177,6 +290,7 @@ class LLMOrderingSystemBase(OrderingSystem):
             )
             total_p_tok += first_resp.prompt_tokens
             total_c_tok += first_resp.completion_tokens
+            total_cached_tok += getattr(first_resp, "cached_tokens", 0)
             if first_resp.retry_count > 0:
                 retry_count += first_resp.retry_count
 
@@ -212,7 +326,8 @@ class LLMOrderingSystemBase(OrderingSystem):
                 f"{prompt}\n\n"
                 f"CORRECTION REQUIRED: Previous attempt failed validation:\n"
                 f"{first_attempt_err}\n"
-                f"You must strictly output a valid JSON OrderDecision with quantity between 0.0 and {max_order}."
+                f"You must strictly output a valid JSON OrderDecision with quantity between 0.0 and {max_order} "
+                f"and concise reasoning under 40 words. Respond with JSON only."
             )
             try:
                 retry_resp = self.llm_client.generate(
@@ -226,6 +341,7 @@ class LLMOrderingSystemBase(OrderingSystem):
                 )
                 total_p_tok += retry_resp.prompt_tokens
                 total_c_tok += retry_resp.completion_tokens
+                total_cached_tok += getattr(retry_resp, "cached_tokens", 0)
 
                 if retry_resp.structured is not None:
                     qty = float(retry_resp.structured.quantity)
@@ -262,6 +378,7 @@ class LLMOrderingSystemBase(OrderingSystem):
             total_p_tok,
             total_c_tok,
             getattr(self.llm_client, "config", None),
+            cached_tokens=total_cached_tok,
         )
 
         # -------------------------------------------------------------
@@ -274,12 +391,14 @@ class LLMOrderingSystemBase(OrderingSystem):
             reasoning=reasoning,
             prompt_tokens=total_p_tok,
             completion_tokens=total_c_tok,
+            cached_tokens=total_cached_tok,
             latency_ms=latency_ms,
             retry_count=retry_count,
             fallback=fallback,
             error_type=error_type,
             cost_usd=cost_usd,
             cache_hit=is_cache_hit,
+            tool_recommendation=recommendation,
         )
 
         return final_order, reasoning
@@ -298,6 +417,8 @@ class LLMOrderingSystemBase(OrderingSystem):
         error_type: Optional[str] = None,
         cost_usd: float = 0.0,
         cache_hit: bool = False,
+        tool_recommendation: Optional[float] = None,
+        cached_tokens: int = 0,
     ) -> None:
         """Write decision row to DuckDB agent_calls and record fallback metric if triggered."""
         if not getattr(self, "log_to_db", True) or not self.db_path:
@@ -322,7 +443,7 @@ class LLMOrderingSystemBase(OrderingSystem):
                         [
                             self.run_id,
                             f"exp_{self.name}",
-                            json.dumps({"system": self.name, "seed": self.seed}),
+                            json.dumps({"system": self.name, "seed": self.seed, "tool_mode": self.tool_mode}),
                         ],
                     )
 
@@ -332,8 +453,8 @@ class LLMOrderingSystemBase(OrderingSystem):
                             call_id, run_id, step_id, agent_name, model_name, provider,
                             prompt_tokens, completion_tokens, cached_tokens, total_cost, cost_usd,
                             latency_ms, retry_count, structured_output_ok, error_type, cache_hit, usage_estimated,
-                            system_name, echelon, step_number, prompt_version, fallback, order_quantity, reasoning
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            system_name, echelon, step_number, prompt_version, fallback, order_quantity, reasoning, tool_recommendation
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         [
                             call_id,
@@ -344,7 +465,7 @@ class LLMOrderingSystemBase(OrderingSystem):
                             provider,
                             prompt_tokens,
                             completion_tokens,
-                            0,
+                            cached_tokens,
                             round(cost_usd, 6),
                             round(cost_usd, 6),
                             round(latency_ms, 2),
@@ -360,6 +481,7 @@ class LLMOrderingSystemBase(OrderingSystem):
                             fallback,
                             final_order,
                             reasoning,
+                            tool_recommendation,
                         ],
                     )
 
@@ -381,6 +503,72 @@ class LLMOrderingSystemBase(OrderingSystem):
                                     "echelon": echelon,
                                     "order": final_order,
                                     "reasoning": reasoning,
+                                }),
+                            ],
+                        )
+
+                    # Record recommendation metrics if recommendation present
+                    if tool_recommendation is not None:
+                        tol = max(1.0, 0.05 * tool_recommendation)
+                        diff = abs(final_order - tool_recommendation)
+                        adopted = 1.0 if diff <= tol else 0.0
+                        overridden = 1.0 - adopted
+
+                        conn.execute(
+                            """
+                            INSERT INTO metrics (
+                                metric_id, run_id, step_number, metric_name, metric_value, category, metadata
+                            ) VALUES (?, ?, ?, 'recommendation_adopted', ?, 'behaviour', ?)
+                            """,
+                            [
+                                f"met_{uuid.uuid4().hex[:12]}",
+                                self.run_id,
+                                step_number,
+                                adopted,
+                                json.dumps({
+                                    "system": self.name,
+                                    "echelon": echelon,
+                                    "tool_recommendation": tool_recommendation,
+                                    "order": final_order,
+                                    "deviation": round(diff, 2),
+                                }),
+                            ],
+                        )
+                        conn.execute(
+                            """
+                            INSERT INTO metrics (
+                                metric_id, run_id, step_number, metric_name, metric_value, category, metadata
+                            ) VALUES (?, ?, ?, 'recommendation_deviation', ?, 'behaviour', ?)
+                            """,
+                            [
+                                f"met_{uuid.uuid4().hex[:12]}",
+                                self.run_id,
+                                step_number,
+                                round(diff, 2),
+                                json.dumps({
+                                    "system": self.name,
+                                    "echelon": echelon,
+                                    "tool_recommendation": tool_recommendation,
+                                    "order": final_order,
+                                }),
+                            ],
+                        )
+                        conn.execute(
+                            """
+                            INSERT INTO metrics (
+                                metric_id, run_id, step_number, metric_name, metric_value, category, metadata
+                            ) VALUES (?, ?, ?, 'recommendation_override', ?, 'behaviour', ?)
+                            """,
+                            [
+                                f"met_{uuid.uuid4().hex[:12]}",
+                                self.run_id,
+                                step_number,
+                                overridden,
+                                json.dumps({
+                                    "system": self.name,
+                                    "echelon": echelon,
+                                    "tool_recommendation": tool_recommendation,
+                                    "order": final_order,
                                 }),
                             ],
                         )

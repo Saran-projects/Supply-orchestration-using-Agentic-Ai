@@ -17,8 +17,8 @@ Test Seeds: 0 to 7
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
@@ -32,7 +32,6 @@ from sca.data.scenarios import generate_scenarios
 from sca.sim.environment import BeerGameEnv
 from sca.sim.metrics import compute_simulation_metrics
 from sca.systems.base import get_system
-import sca.baselines
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("benchmark_v2_1_final")

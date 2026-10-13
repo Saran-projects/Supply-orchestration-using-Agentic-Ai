@@ -45,6 +45,7 @@ from sca.systems.multi_agent_tools import (
 from sca.tools import (
     SmoothedOrderUpToInput,
     ValidateOrderInput,
+    safe_order_range,
     smoothed_order_up_to,
     validate_order,
 )
@@ -127,8 +128,18 @@ class OrchestratorAgent:
             config=self.config,
         )
 
-        p_ver = self.config.get("prompt_version", "v1")
-        tpl_name = "orchestrated_v2.txt" if p_ver in ("v2", "orchestrated_v2") else "orchestrated_v1.txt"
+        p_ver = self.config.get("prompt_version", "v3")
+        p_norm = p_ver.replace(".", "_")
+        tpl_cand = f"orchestrated_{p_norm}.txt"
+        prompts_dir = Path(__file__).resolve().parent.parent / "agents" / "prompts"
+        if (prompts_dir / tpl_cand).exists():
+            tpl_name = tpl_cand
+        elif p_ver.startswith("v3") or p_ver.startswith("orchestrated_v3"):
+            tpl_name = "orchestrated_v3.txt"
+        elif p_ver in ("v2", "orchestrated_v2"):
+            tpl_name = "orchestrated_v2.txt"
+        else:
+            tpl_name = "orchestrated_v1.txt"
         try:
             self.prompt_template = load_prompt_template(tpl_name)
         except Exception:
@@ -356,6 +367,17 @@ class OrchestratorAgent:
                     )
                 messages_exchanged += 1
 
+                last_5 = (
+                    [round(float(h.order_placed), 1) for h in state.history_window[-5:]]
+                    if state.history_window
+                    else [round(float(state.last_order), 1)]
+                )
+                fc_val = proposals["demand"].quantity if "demand" in proposals else float(state.current_demand)
+                delta = float(self.config.get("rate_limit_delta", 0.5))
+                min_safe, max_safe = safe_order_range(float(state.last_order), float(fc_val), delta)
+                max_safe = min(capacity_limit, max_safe)
+                safe_range_str = f"[{min_safe:.1f}, {max_safe:.1f}]"
+
                 # Format prompt for negotiation concession
                 prompt = self.prompt_template.format(
                     echelon=self.echelon.capitalize(),
@@ -364,17 +386,22 @@ class OrchestratorAgent:
                     inventory=f"{state.inventory:.1f}",
                     backlog=f"{state.backlog:.1f}",
                     pipeline=f"{state.pipeline:.1f}",
+                    last_5_orders=str(last_5),
+                    forecast=f"{fc_val:.1f}",
+                    safe_range=safe_range_str,
                     proposals_summary=proposals_summary,
                     conflict_details=conflict_desc,
                     round_num=round_idx,
                     max_rounds=self.max_rounds,
                 )
 
-                # LLM concession call
+                # LLM concession call with 1-retry fallback
                 revised_qty = min(capacity_limit, float(np.median(list(curr_proposals.values()))))
                 concession_rationale = f"Adjusted order toward capacity-bounded median ({revised_qty:.1f})"
 
                 if self.llm_client is not None:
+                    first_err = None
+                    p_ver_str = str(self.config.get("prompt_version", "v3"))
                     try:
                         resp = self.llm_client.generate(
                             prompt=prompt,
@@ -382,13 +409,59 @@ class OrchestratorAgent:
                             model=self.config.get("model", None),
                             use_cache=self.config.get("use_cache", True),
                             run_id=run_id,
+                            system_name="orchestrated",
+                            echelon=self.echelon,
+                            step_number=state.step,
+                            prompt_version=p_ver_str,
                         )
                         tokens_used += (resp.prompt_tokens + resp.completion_tokens)
                         if isinstance(resp.structured, NegotiationResponse):
-                            revised_qty = min(capacity_limit, resp.structured.revised_quantity)
-                            concession_rationale = resp.structured.rationale
+                            qty = resp.structured.revised_quantity
+                            if 0.0 <= qty <= capacity_limit:
+                                revised_qty = qty
+                                concession_rationale = resp.structured.rationale
+                            else:
+                                first_err = f"Quantity {qty} out of range [0.0, {capacity_limit}]"
+                        else:
+                            first_err = "No structured NegotiationResponse"
                     except Exception as e:
-                        logger.warning("Negotiation LLM generation error: %s", e)
+                        first_err = str(e)
+
+                    # Retry once if first attempt failed
+                    if first_err is not None:
+                        retry_prompt = (
+                            f"{prompt}\n\n"
+                            f"CORRECTION REQUIRED: Previous attempt failed validation:\n{first_err}\n"
+                            f"Output strictly a valid JSON NegotiationResponse with revised_quantity "
+                            f"between 0.0 and {capacity_limit} and rationale under 40 words. Respond with JSON only."
+                        )
+                        try:
+                            retry_resp = self.llm_client.generate(
+                                prompt=retry_prompt,
+                                response_model=NegotiationResponse,
+                                model=self.config.get("model", None),
+                                use_cache=self.config.get("use_cache", True),
+                                run_id=run_id,
+                                system_name="orchestrated",
+                                echelon=self.echelon,
+                                step_number=state.step,
+                                prompt_version=p_ver_str,
+                            )
+                            tokens_used += (retry_resp.prompt_tokens + retry_resp.completion_tokens)
+                            if isinstance(retry_resp.structured, NegotiationResponse):
+                                qty = retry_resp.structured.revised_quantity
+                                if 0.0 <= qty <= capacity_limit:
+                                    revised_qty = qty
+                                    concession_rationale = retry_resp.structured.rationale
+                                else:
+                                    revised_qty = min(capacity_limit, max(0.0, float(state.last_order)))
+                                    concession_rationale = f"Fallback to last order {revised_qty:.1f}"
+                            else:
+                                revised_qty = min(capacity_limit, max(0.0, float(state.last_order)))
+                                concession_rationale = f"Fallback to last order {revised_qty:.1f}"
+                        except Exception:
+                            revised_qty = min(capacity_limit, max(0.0, float(state.last_order)))
+                            concession_rationale = f"Fallback to last order {revised_qty:.1f}"
 
                 # Log Agent concession message
                 agent_msg_id = f"msg_{uuid.uuid4().hex[:8]}"
@@ -450,11 +523,16 @@ class OrchestratedSystem(OrderingSystem):
         llm_client: Optional[LLMClient] = None,
         run_id: Optional[str] = None,
         db_path: Optional[Union[str, Path]] = None,
+        tool_mode: str = "deterministic",
         **kwargs: Any,
     ):
         super().__init__(name=name, config=config)
         self.config = config or {}
         self.run_id = run_id or f"run_system6_{uuid.uuid4().hex[:8]}"
+        self.prompt_version = self.config.get("prompt_version", "v3")
+        self.tool_mode = self.config.get("tool_mode", tool_mode)
+        if self.tool_mode not in ("deterministic", "llm_function_calling"):
+            raise ValueError(f"Invalid tool_mode '{self.tool_mode}'. Must be 'deterministic' or 'llm_function_calling'.")
         if self.config.get("db_path") is False or db_path is False:
             self.db_path = False
         elif db_path is not None:

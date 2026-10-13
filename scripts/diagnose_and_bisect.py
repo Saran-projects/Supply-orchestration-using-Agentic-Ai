@@ -11,27 +11,22 @@ from __future__ import annotations
 
 import logging
 import math
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import numpy as np
-import pandas as pd
 
 from sca.config import get_config
 from sca.data.scenarios import (
     DATACO_LATE_DELIVERY_RATE,
-    DATACO_LEAD_TIME_DAYS,
-    DATACO_LEAD_TIME_PROBS,
     LeadTimeSampler,
     build_scenario_object,
     find_scenario_windows,
     generate_scenarios,
     load_chosen_series,
 )
-from sca.sim.environment import BeerGameEnv, ECHELONS, EchelonState
+from sca.sim.environment import ECHELONS, BeerGameEnv
 from sca.sim.metrics import compute_simulation_metrics
 from sca.systems.base import OrderingSystem, get_system
-import sca.baselines
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("diagnostic")
@@ -53,16 +48,16 @@ def build_legacy_seasonal_scenario():
         dominant_period=7,
     )
     start_idx, end_idx, meta = windows["seasonal"]
-    
+
     # Old v1: per-window normalization
     raw_window = series.iloc[start_idx:end_idx].values.astype(float)
     raw_mean = np.mean(raw_window)
     scale_factor = 100.0 / raw_mean
-    
-    scaled_scenario_demand = np.round(raw_window * scale_factor, 2)
+
+    np.round(raw_window * scale_factor, 2)
     train_raw = series.iloc[:start_idx].values.astype(float)
-    scaled_train_demand = np.round(train_raw * scale_factor, 2)
-    
+    np.round(train_raw * scale_factor, 2)
+
     sampler = LeadTimeSampler()
     return build_scenario_object(
         name="seasonal",
@@ -137,7 +132,7 @@ def eval_policy(
         costs.append(m.total_cost)
         sls.append(m.service_level["retailer"])
         frs.append(m.fill_rate["retailer"])
-        
+
         valid_bws = [bw for bw in m.bullwhip_ratio.values() if not np.isnan(bw)]
         bws.append(np.mean(valid_bws) if valid_bws else np.nan)
         order_vars.append(m.order_variance_by_echelon.get("retailer", 0.0))
@@ -170,7 +165,7 @@ def main():
     res_0_eoq = eval_policy("baseline_eoq", sc_v1, use_residual_bootstrap=False, backlog_cost=1.0)
     res_0_ss = eval_policy("baseline_s_S", sc_v1, use_residual_bootstrap=False, backlog_cost=1.0)
 
-    print(f"Old Benchmark Configuration (Static demand, v1 per-window scale, backlog=$1.0):")
+    print("Old Benchmark Configuration (Static demand, v1 per-window scale, backlog=$1.0):")
     print(f"  Untuned EOQ:  Cost=${res_0_eoq['mean_cost']:,.2f} | FR={res_0_eoq['mean_fr']:.2f}% | SL={res_0_eoq['mean_sl']:.1f}% | BW={res_0_eoq['mean_bw']:.3f}")
     print(f"  Untuned (s,S): Cost=${res_0_ss['mean_cost']:,.2f} | FR={res_0_ss['mean_fr']:.2f}% | SL={res_0_ss['mean_sl']:.1f}% | BW={res_0_ss['mean_bw']:.3f}")
 
@@ -179,37 +174,37 @@ def main():
     sc_seasonal_v2 = scenarios_v2["seasonal"]
     # Static demand with v2 scale
     res_a = eval_policy("baseline_eoq", sc_seasonal_v2, use_residual_bootstrap=False, backlog_cost=1.0)
-    print(f"\nSwitch (a) [Single training scale factor only, static demand, b=$1.0]:")
+    print("\nSwitch (a) [Single training scale factor only, static demand, b=$1.0]:")
     print(f"  Untuned EOQ:  Cost=${res_a['mean_cost']:,.2f} | FR={res_a['mean_fr']:.2f}% | SL={res_a['mean_sl']:.1f}% | BW={res_a['mean_bw']:.3f}")
 
     # Step (b): Switch: Residual Bootstrap
     res_b = eval_policy("baseline_eoq", sc_seasonal_v2, use_residual_bootstrap=True, backlog_cost=1.0)
-    print(f"\nSwitch (b) [Single training scale factor + Residual bootstrap, b=$1.0]:")
+    print("\nSwitch (b) [Single training scale factor + Residual bootstrap, b=$1.0]:")
     print(f"  Untuned EOQ:  Cost=${res_b['mean_cost']:,.2f} | FR={res_b['mean_fr']:.2f}% | SL={res_b['mean_sl']:.1f}% | BW={res_b['mean_bw']:.3f}")
 
     # Step (c): Switch: Initial inventory / pipeline settings (e.g. init_inv=200 vs 400)
     res_c_200 = res_b
     res_c_400 = eval_policy("baseline_eoq", sc_seasonal_v2, use_residual_bootstrap=True, backlog_cost=1.0, initial_inventory=400.0)
-    print(f"\nSwitch (c) [Initial inventory = 400.0 vs 200.0, b=$1.0]:")
+    print("\nSwitch (c) [Initial inventory = 400.0 vs 200.0, b=$1.0]:")
     print(f"  Init Inv 200: Cost=${res_c_200['mean_cost']:,.2f} | FR={res_c_200['mean_fr']:.2f}% | SL={res_c_200['mean_sl']:.1f}% | BW={res_c_200['mean_bw']:.3f}")
     print(f"  Init Inv 400: Cost=${res_c_400['mean_cost']:,.2f} | FR={res_c_400['mean_fr']:.2f}% | SL={res_c_400['mean_sl']:.1f}% | BW={res_c_400['mean_bw']:.3f}")
 
     # Step (d): Switch: Injected shock
     sc_shock_v2 = scenarios_v2["shock"]
     res_d = eval_policy("baseline_eoq", sc_shock_v2, use_residual_bootstrap=True, backlog_cost=1.0)
-    print(f"\nSwitch (d) [Shock scenario with injected level shift, b=$1.0]:")
+    print("\nSwitch (d) [Shock scenario with injected level shift, b=$1.0]:")
     print(f"  Untuned EOQ:  Cost=${res_d['mean_cost']:,.2f} | FR={res_d['mean_fr']:.2f}% | SL={res_d['mean_sl']:.1f}% | BW={res_d['mean_bw']:.3f}")
 
     # Step (e): Switch: Capacity or cost change (Backlog cost = $5.0 vs $1.0)
     res_e_seasonal = eval_policy("baseline_eoq", sc_seasonal_v2, use_residual_bootstrap=True, backlog_cost=5.0)
     res_e_shock = eval_policy("baseline_eoq", sc_shock_v2, use_residual_bootstrap=True, backlog_cost=5.0)
-    print(f"\nSwitch (e) [Cost change: Backlog cost = $5.0 (10x holding cost)]:")
+    print("\nSwitch (e) [Cost change: Backlog cost = $5.0 (10x holding cost)]:")
     print(f"  Seasonal:     Cost=${res_e_seasonal['mean_cost']:,.2f} | FR={res_e_seasonal['mean_fr']:.2f}% | SL={res_e_seasonal['mean_sl']:.1f}% | BW={res_e_seasonal['mean_bw']:.3f}")
     print(f"  Shock:        Cost=${res_e_shock['mean_cost']:,.2f} | FR={res_e_shock['mean_fr']:.2f}% | SL={res_e_shock['mean_sl']:.1f}% | BW={res_e_shock['mean_bw']:.3f}")
 
     # Demonstration of the state-leak bug (missing sys.reset across seeds)
     res_bug = eval_policy("baseline_eoq", sc_seasonal_v2, use_residual_bootstrap=True, backlog_cost=5.0, reset_per_seed=False)
-    print(f"\nState-Leak Fault Injection (Omitting sys.reset across seeds in loop):")
+    print("\nState-Leak Fault Injection (Omitting sys.reset across seeds in loop):")
     print(f"  Collapsed:    Cost=${res_bug['mean_cost']:,.2f} | FR={res_bug['mean_fr']:.2f}% | SL={res_bug['mean_sl']:.1f}% | BW={res_bug['mean_bw']}")
 
     # -----------------------------------------------------------------------
@@ -341,7 +336,7 @@ def main():
     print(f"Lead-Time Demand Std (sigma_LTD):           {sigma_LTD:.2f} units")
     print(f"Safety Stock Buffer (z * sigma_LTD):        {safety_stock:.2f} units")
     print(f"Implied Base-Stock Target (S = L*mu_D + SS): {implied_S:.2f} units")
-    print(f"Current Simulator Initial Inventory:        200.00 units")
+    print("Current Simulator Initial Inventory:        200.00 units")
     print(f"Deficit relative to Implied Base-Stock:     {implied_S - 200.0:.2f} units (Initial inventory is {200.0 / implied_S * 100:.1f}% of required buffer)")
 
 

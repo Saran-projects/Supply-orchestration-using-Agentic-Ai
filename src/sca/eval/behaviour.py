@@ -49,10 +49,18 @@ class BehaviouralMetrics:
     seed: int
     run_id: str
 
-    # 1. Tool-Use Quality
-    tool_choice_accuracy: Optional[float] = None
-    parameter_accuracy: Optional[float] = None
+    # 0. Tool Execution Mode
+    tool_mode: str = "deterministic"
+
+    # 1. Tool-Use Quality (when tool_mode == "llm_function_calling")
+    tool_choice_accuracy: Optional[Any] = None
+    parameter_accuracy: Optional[Any] = None
     total_tool_calls: int = 0
+
+    # 1b. Deterministic Recommendation Metrics (when tool_mode == "deterministic")
+    recommendation_adoption_rate: Optional[float] = None
+    mean_recommendation_deviation: Optional[float] = None
+    recommendation_override_share: Optional[float] = None
 
     # 2. Instruction Adherence & Resilience
     instruction_following_rate: float = 1.0
@@ -168,6 +176,66 @@ def compute_tool_choice_accuracy(conn: duckdb.DuckDBPyConnection, run_id: str) -
 
     total, correct = row
     return round(float(correct) / float(total), 4), total
+
+
+def compute_recommendation_metrics(
+    conn: duckdb.DuckDBPyConnection,
+    run_id: str,
+    tolerance: float = 0.05,
+) -> Tuple[Optional[float], Optional[float], Optional[float], int]:
+    """Compute recommendation adoption rate, mean deviation, and override share.
+
+    Adoption criteria: final order within 5% of tool recommendation:
+    |final_order - recommendation| <= max(1.0, recommendation * tolerance).
+    Override share: 1.0 - adoption_rate.
+    """
+    rows = conn.execute(
+        """
+        SELECT order_quantity, tool_recommendation
+        FROM agent_calls
+        WHERE run_id = ? AND tool_recommendation IS NOT NULL
+        """,
+        [run_id],
+    ).fetchall()
+
+    if not rows:
+        metric_rows = conn.execute(
+            """
+            SELECT metric_name, metric_value
+            FROM metrics
+            WHERE run_id = ? AND metric_name IN ('recommendation_adopted', 'recommendation_deviation')
+            """,
+            [run_id],
+        ).fetchall()
+        if metric_rows:
+            adoptions = [v for k, v in metric_rows if k == "recommendation_adopted"]
+            deviations = [v for k, v in metric_rows if k == "recommendation_deviation"]
+            if adoptions:
+                adopt_rate = round(float(sum(adoptions)) / float(len(adoptions)), 4)
+                mean_dev = round(float(sum(deviations)) / float(len(deviations)), 4) if deviations else 0.0
+                override_share = round(1.0 - adopt_rate, 4)
+                return adopt_rate, mean_dev, override_share, len(adoptions)
+
+    if not rows:
+        return None, None, None, 0
+
+    adopted_cnt = 0
+    total = len(rows)
+    dev_sum = 0.0
+
+    for ord_qty, rec in rows:
+        q = float(ord_qty or 0.0)
+        r = float(rec or 0.0)
+        diff = abs(q - r)
+        dev_sum += diff
+        threshold = max(1.0, r * tolerance)
+        if diff <= threshold:
+            adopted_cnt += 1
+
+    adopt_rate = round(float(adopted_cnt) / float(total), 4)
+    mean_dev = round(float(dev_sum) / float(total), 4)
+    override_share = round(1.0 - adopt_rate, 4)
+    return adopt_rate, mean_dev, override_share, total
 
 
 def compute_parameter_accuracy(
@@ -550,6 +618,8 @@ def extract_run_metadata(conn: duckdb.DuckDBPyConnection, run_id: str) -> Dict[s
                 meta["model"] = src["model_name"]
             if "seed" in src:
                 meta["seed"] = int(src["seed"])
+            if "tool_mode" in src:
+                meta["tool_mode"] = str(src["tool_mode"])
 
     # Fallback parsing from run_id naming pattern: <system>_<model>_<scenario>_seed_<seed>
     parts = run_id.split("_")
@@ -561,6 +631,17 @@ def extract_run_metadata(conn: duckdb.DuckDBPyConnection, run_id: str) -> Dict[s
             meta["seed"] = int(parts[seed_idx + 1])
         except Exception:
             pass
+
+    # Check for tool_mode: explicit or inferred from presence of expected_tool in tool_calls
+    if "tool_mode" not in meta:
+        tc_cnt = conn.execute(
+            "SELECT count(*) FROM tool_calls WHERE run_id = ? AND expected_tool IS NOT NULL",
+            [run_id],
+        ).fetchone()
+        if tc_cnt and tc_cnt[0] > 0:
+            meta["tool_mode"] = "llm_function_calling"
+        else:
+            meta["tool_mode"] = "deterministic"
 
     return meta
 
@@ -579,8 +660,10 @@ def compute_behavioural_metrics(
     meta = extract_run_metadata(conn, run_id)
 
     # 2. Compute individual components
+    tool_mode = meta.get("tool_mode", "deterministic")
     tool_acc, total_tools = compute_tool_choice_accuracy(conn, run_id)
     param_acc, _ = compute_parameter_accuracy(conn, run_id, tolerance=tolerance)
+    adopt_rate, mean_dev, override_share, _ = compute_recommendation_metrics(conn, run_id, tolerance=tolerance)
     instr_rate, total_dec = compute_instruction_following_rate(conn, run_id)
     ground_score, ground_cnt, total_nums = compute_groundedness(conn, run_id, tolerance=tolerance)
     fb_rate, err_rate = compute_fallback_and_error_rate(conn, run_id)
@@ -589,15 +672,26 @@ def compute_behavioural_metrics(
         conn, run_id, models_config_path=models_config_path
     )
 
+    if tool_mode == "deterministic":
+        final_tool_acc = None
+        final_param_acc = None
+    else:
+        final_tool_acc = tool_acc
+        final_param_acc = param_acc
+
     bm = BehaviouralMetrics(
         system=meta["system"],
         scenario=meta["scenario"],
         model=meta["model"],
         seed=meta["seed"],
         run_id=run_id,
-        tool_choice_accuracy=tool_acc,
-        parameter_accuracy=param_acc,
+        tool_mode=tool_mode,
+        tool_choice_accuracy=final_tool_acc,
+        parameter_accuracy=final_param_acc,
         total_tool_calls=total_tools,
+        recommendation_adoption_rate=adopt_rate,
+        mean_recommendation_deviation=mean_dev,
+        recommendation_override_share=override_share,
         instruction_following_rate=instr_rate,
         fallback_rate=fb_rate,
         error_rate=err_rate,
@@ -624,8 +718,10 @@ def compute_behavioural_metrics(
                 tool_choice_accuracy, parameter_accuracy, instruction_following_rate,
                 groundedness_score, fallback_rate, error_rate,
                 avg_rounds, avg_messages, conflict_share,
-                avg_tokens, avg_cost_usd, avg_latency_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                avg_tokens, avg_cost_usd, avg_latency_ms,
+                recommendation_adoption_rate, mean_recommendation_deviation,
+                recommendation_override_share, tool_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 f"bm_{uuid.uuid4().hex[:12]}",
@@ -634,8 +730,8 @@ def compute_behavioural_metrics(
                 bm.scenario,
                 bm.model,
                 bm.seed,
-                bm.tool_choice_accuracy,
-                bm.parameter_accuracy,
+                bm.tool_choice_accuracy if isinstance(bm.tool_choice_accuracy, (int, float)) else None,
+                bm.parameter_accuracy if isinstance(bm.parameter_accuracy, (int, float)) else None,
                 bm.instruction_following_rate,
                 bm.groundedness_score,
                 bm.fallback_rate,
@@ -646,6 +742,10 @@ def compute_behavioural_metrics(
                 bm.avg_tokens_per_decision,
                 bm.avg_cost_usd_per_decision,
                 bm.avg_latency_ms_per_decision,
+                bm.recommendation_adoption_rate,
+                bm.mean_recommendation_deviation,
+                bm.recommendation_override_share,
+                bm.tool_mode,
             ],
         )
 
@@ -655,10 +755,9 @@ def compute_behavioural_metrics(
             "scenario": bm.scenario,
             "model": bm.model,
             "seed": bm.seed,
+            "tool_mode": bm.tool_mode,
         })
-        for m_name, m_val in [
-            ("tool_choice_accuracy", bm.tool_choice_accuracy),
-            ("parameter_accuracy", bm.parameter_accuracy),
+        metric_pairs: List[Tuple[str, Optional[float]]] = [
             ("instruction_following_rate", bm.instruction_following_rate),
             ("groundedness_score", bm.groundedness_score),
             ("fallback_rate", bm.fallback_rate),
@@ -669,7 +768,20 @@ def compute_behavioural_metrics(
             ("avg_tokens_per_decision", bm.avg_tokens_per_decision),
             ("avg_cost_usd_per_decision", bm.avg_cost_usd_per_decision),
             ("avg_latency_ms_per_decision", bm.avg_latency_ms_per_decision),
-        ]:
+        ]
+        if bm.tool_mode == "deterministic":
+            metric_pairs.extend([
+                ("recommendation_adoption_rate", bm.recommendation_adoption_rate),
+                ("mean_recommendation_deviation", bm.mean_recommendation_deviation),
+                ("recommendation_override_share", bm.recommendation_override_share),
+            ])
+        else:
+            metric_pairs.extend([
+                ("tool_choice_accuracy", float(bm.tool_choice_accuracy) if isinstance(bm.tool_choice_accuracy, (int, float)) else None),
+                ("parameter_accuracy", float(bm.parameter_accuracy) if isinstance(bm.parameter_accuracy, (int, float)) else None),
+            ])
+
+        for m_name, m_val in metric_pairs:
             if m_val is not None:
                 conn.execute(
                     """
@@ -737,24 +849,35 @@ def generate_behaviour_summary_table(metrics_list: List[BehaviouralMetrics]) -> 
         return "No behavioural metrics recorded."
 
     lines: List[str] = [
-        "| System | Scenario | Model | Seed | Tool Acc | Param Acc | Instr Follow | Grounded | Fallback | Avg Rounds | Conflict % | Avg Cost ($) | Avg Lat (ms) |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+        "| System | Scenario | Model | Seed | Mode | Tool Acc | Param Acc | Rec Adopt % | Mean Dev | Override % | Instr Follow | Grounded | Fallback | Avg Cost ($) | Avg Lat (ms) |",
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
     for m in metrics_list:
-        tool_s = f"{m.tool_choice_accuracy * 100:.1f}%" if m.tool_choice_accuracy is not None else "-"
-        param_s = f"{m.parameter_accuracy * 100:.1f}%" if m.parameter_accuracy is not None else "-"
+        mode = m.tool_mode or "deterministic"
+        if mode == "deterministic":
+            tool_s = "n/a (tools deterministic)"
+            param_s = "n/a (tools deterministic)"
+            adopt_s = f"{m.recommendation_adoption_rate * 100:.1f}%" if m.recommendation_adoption_rate is not None else "-"
+            dev_s = f"{m.mean_recommendation_deviation:.2f}" if m.mean_recommendation_deviation is not None else "-"
+            over_s = f"{m.recommendation_override_share * 100:.1f}%" if m.recommendation_override_share is not None else "-"
+        else:
+            tool_s = f"{float(m.tool_choice_accuracy) * 100:.1f}%" if isinstance(m.tool_choice_accuracy, (int, float)) else (str(m.tool_choice_accuracy) if m.tool_choice_accuracy is not None else "-")
+            param_s = f"{float(m.parameter_accuracy) * 100:.1f}%" if isinstance(m.parameter_accuracy, (int, float)) else (str(m.parameter_accuracy) if m.parameter_accuracy is not None else "-")
+            adopt_s = "-"
+            dev_s = "-"
+            over_s = "-"
+
         instr_s = f"{m.instruction_following_rate * 100:.1f}%"
         ground_s = f"{m.groundedness_score * 100:.1f}%"
         fb_s = f"{m.fallback_rate * 100:.1f}%"
-        r_s = f"{m.avg_rounds_per_decision:.2f}"
-        conf_s = f"{m.conflict_share * 100:.1f}%"
         cost_s = f"${m.avg_cost_usd_per_decision:.5f}"
         lat_s = f"{m.avg_latency_ms_per_decision:.1f}"
 
         lines.append(
-            f"| {m.system:<10} | {m.scenario:<8} | {m.model:<6} | {m.seed:<4} | {tool_s:<8} | {param_s:<9} | "
-            f"{instr_s:<12} | {ground_s:<8} | {fb_s:<8} | {r_s:<10} | {conf_s:<10} | {cost_s:<12} | {lat_s:<12} |"
+            f"| {m.system:<10} | {m.scenario:<8} | {m.model:<6} | {m.seed:<4} | {mode:<13} | "
+            f"{tool_s:<25} | {param_s:<25} | {adopt_s:<11} | {dev_s:<8} | {over_s:<10} | "
+            f"{instr_s:<12} | {ground_s:<8} | {fb_s:<8} | {cost_s:<12} | {lat_s:<12} |"
         )
 
     return "\n".join(lines)
@@ -766,6 +889,7 @@ __all__ = [
     "is_number_grounded",
     "compute_tool_choice_accuracy",
     "compute_parameter_accuracy",
+    "compute_recommendation_metrics",
     "compute_instruction_following_rate",
     "compute_groundedness",
     "compute_fallback_and_error_rate",

@@ -13,7 +13,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
-import numpy as np
 import pandas as pd
 
 import sca.baselines  # noqa: F401

@@ -44,8 +44,8 @@ four_echelon:
   initial_inventory: 687.0
   initial_backlog: 0.0
   holding_cost_per_unit: 0.5
-  backlog_cost_multiplier: 10.0
-  backlog_cost_per_unit: 5.0
+  backlog_cost_multiplier: 5.0
+  backlog_cost_per_unit: 2.5
   manufacturer_capacity: 300.0
   history_window: 14
   default_lead_time: 2
@@ -53,9 +53,9 @@ four_echelon:
   horizon_steps: 40
   warmup_steps: 5
   steady_state_init: true
-  alpha: 0.6
-  rate_limit_delta: 0.5
-  forecast_cap_multiple: 1.5
+  alpha: 0.95
+  rate_limit_delta: 0.8
+  forecast_cap_multiple: 1.2
   enable_smoothed_target_conflict: false
   smoothed_target_threshold: 0.25
   tuning_seeds_used:
@@ -64,9 +64,15 @@ four_echelon:
   - 102
   - 103
   - 104
-  beta: 0.6
+  beta: 0.95
   safety_factor_z: 2.5
-  tuned_eoq_q_mult: 0.75
+  tuned_eoq_q_mult: 0.25
   tuned_eoq_rop_factor: 1.2
-  tuned_ss_s_factor: 1.2
+  tuned_ss_s_factor: 1.1
   tuned_ss_S_factor: 0.25
+  tool_mode: deterministic
+  info_sharing: true
+  s2c_beta_shock: 1.0
+  s2c_delta_shock: 0.8
+  s2c_shock_duration: 4
+  s2c_info_sharing: true

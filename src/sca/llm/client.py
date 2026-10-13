@@ -76,8 +76,8 @@ MODEL_PRICING: Dict[str, Tuple[float, float]] = {
     "gemini-1.5-pro": (1.25, 5.00),
     "gemini-2.0-flash": (0.10, 0.40),
     # Isoquant GLM
-    "glm-5.3-flash": (0.07, 0.20),
-    "glm-isoquant": (0.07, 0.20),
+    "glm-5.3-flash": (0.027, 0.49, 0.018),
+    "glm-isoquant": (0.027, 0.49, 0.018),
     # Local & Mock
     "llama3.1:8b": (0.0, 0.0),
     "local-model": (0.0, 0.0),
@@ -91,6 +91,7 @@ def calculate_cost(
     prompt_tokens: int,
     completion_tokens: int,
     config: Optional[ModelsConfig] = None,
+    cached_tokens: int = 0,
 ) -> float:
     """Calculate cost in USD based on models.yaml entry prices or fallback pricing table."""
     lookup_key = model.lower().strip()
@@ -116,7 +117,14 @@ def calculate_cost(
             try:
                 p_in = float(entry.price_per_1k_input)
                 p_out = float(entry.price_per_1k_output)
-                in_cost = (prompt_tokens / 1000.0) * p_in
+                p_cached = (
+                    float(entry.price_per_1k_cached_input)
+                    if getattr(entry, "price_per_1k_cached_input", None) is not None
+                    else p_in
+                )
+                eff_cached = max(0, min(cached_tokens, prompt_tokens))
+                eff_uncached = max(0, prompt_tokens - eff_cached)
+                in_cost = (eff_uncached / 1000.0) * p_in + (eff_cached / 1000.0) * p_cached
                 out_cost = (completion_tokens / 1000.0) * p_out
                 return float(round(in_cost + out_cost, 6))
             except (ValueError, TypeError):
@@ -132,8 +140,13 @@ def calculate_cost(
     if not rate:
         rate = (0.50, 2.00)  # Conservative fallback
 
-    input_cost = (prompt_tokens / 1_000_000.0) * rate[0]
-    output_cost = (completion_tokens / 1_000_000.0) * rate[1]
+    p_in_m = rate[0]
+    p_out_m = rate[1]
+    p_cached_m = rate[2] if len(rate) > 2 else rate[0]
+    eff_cached = max(0, min(cached_tokens, prompt_tokens))
+    eff_uncached = max(0, prompt_tokens - eff_cached)
+    input_cost = (eff_uncached / 1_000_000.0) * p_in_m + (eff_cached / 1_000_000.0) * p_cached_m
+    output_cost = (completion_tokens / 1_000_000.0) * p_out_m
     return float(round(input_cost + output_cost, 6))
 
 
@@ -535,6 +548,19 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
             call_kwargs["max_tokens"] = kwargs["max_tokens"]
         elif self.entry.max_tokens:
             call_kwargs["max_tokens"] = self.entry.max_tokens
+
+        # Optional parameter to limit or disable provider reasoning tokens
+        if getattr(self.entry, "reasoning_tokens", None) is not None:
+            r_val = self.entry.reasoning_tokens
+            if isinstance(r_val, bool) and not r_val or str(r_val).lower() in ("disabled", "none", "0", "false"):
+                call_kwargs.setdefault("extra_body", {})["thinking"] = {"type": "disabled"}
+            elif isinstance(r_val, int) and r_val > 0:
+                call_kwargs.setdefault("extra_body", {})["max_thinking_tokens"] = r_val
+            elif isinstance(r_val, str) and r_val.lower() not in ("disabled", "none"):
+                call_kwargs.setdefault("extra_body", {})["reasoning_tokens"] = r_val
+
+        if getattr(self.entry, "reasoning_effort", None) is not None:
+            call_kwargs["reasoning_effort"] = self.entry.reasoning_effort
 
         # Backoff retry loop for 429/5xx/timeouts
         for attempt in range(retries + 1):
@@ -1447,7 +1473,7 @@ class LLMClient:
                     structured_ok = False
                     error_type = "StructuredOutputError"
                     elapsed_ms = (time.time() - start_time) * 1000.0
-                    cost_usd = calculate_cost(eff_model_name, p_tok, c_tok, self.config)
+                    cost_usd = calculate_cost(eff_model_name, p_tok, c_tok, self.config, cached_tokens=cached_tok)
 
                     # Record failure in DuckDB before raising
                     if log_to_db:
@@ -1482,7 +1508,7 @@ class LLMClient:
 
         elapsed_ms = (time.time() - start_time) * 1000.0
         tot_tok = p_tok + c_tok
-        cost_usd = calculate_cost(eff_model_name, p_tok, c_tok, self.config)
+        cost_usd = calculate_cost(eff_model_name, p_tok, c_tok, self.config, cached_tokens=cached_tok)
 
         # 6. Write to Disk Cache
         if should_cache and cache_key:

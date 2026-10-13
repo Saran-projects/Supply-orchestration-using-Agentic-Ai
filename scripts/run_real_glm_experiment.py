@@ -15,10 +15,9 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from sca.data.scenarios import generate_scenarios
 from sca.db import get_duckdb_connection
@@ -87,15 +86,13 @@ def run_glm_experiment(steps_count: int = 30) -> Dict[str, Any]:
 
     s3_start = time.time()
     s3_decisions = 0
-    s3_fallbacks = 0
-    s3_struct_ok_count = 0
 
     for step_idx in range(steps_count):
         states = {e: env_s3.observe(e) for e in ECHELONS}
         orders: Dict[str, float] = {}
 
-        def _exec_ech(ech: str) -> tuple[str, float]:
-            st = states[ech]
+        def _exec_ech(ech: str, cur_states=states) -> tuple[str, float]:
+            st = cur_states[ech]
             mo = sys3.get_max_order(ech)
             p = sys3.format_echelon_prompt(echelon=ech, state=st, max_order=mo)
             q, _ = sys3._execute_echelon_decision(

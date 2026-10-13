@@ -5,11 +5,6 @@ Fully offline, strictly read-only DuckDB analytics, interactive chat inspector.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any, Dict
-
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -101,7 +96,7 @@ if selected_page == "1. Overview":
         """
         The simulation environment models a classic 4-echelon serial **Beer Distribution Game**:
         ```
-        [ End Customers ] 
+        [ End Customers ]
               │ (Consumer Demand)
               ▼
         ┌─────────────┐        Orders Upstream (days t)        ┌──────────────┐
@@ -131,14 +126,14 @@ if selected_page == "1. Overview":
             <div class="sca-card" style="border-left: 4px solid {SYSTEM_COLORS['system_1']};">
                 <h4>System 1: (s, S) Heuristic</h4>
                 <p style="font-size: 0.85rem; color: #94A3B8;">
-                    Classical dynamic base-stock inventory policy. Triggers reorder when inventory position 
+                    Classical dynamic base-stock inventory policy. Triggers reorder when inventory position
                     drops below reorder point <code>s</code> up to target <code>S</code>.
                 </p>
             </div>
             <div class="sca-card" style="border-left: 4px solid {SYSTEM_COLORS['system_2']};">
                 <h4>System 2: EOQ Heuristic</h4>
                 <p style="font-size: 0.85rem; color: #94A3B8;">
-                    Economic Order Quantity balancing fixed ordering costs against holding costs, 
+                    Economic Order Quantity balancing fixed ordering costs against holding costs,
                     augmented with safety stock for lead-time demand variance.
                 </p>
             </div>
@@ -152,14 +147,14 @@ if selected_page == "1. Overview":
             <div class="sca-card" style="border-left: 4px solid {SYSTEM_COLORS['system_3']};">
                 <h4>System 3: Single Agent LLM</h4>
                 <p style="font-size: 0.85rem; color: #94A3B8;">
-                    Independent LLM prompt per echelon given local inventory, backlog, pipeline, 
+                    Independent LLM prompt per echelon given local inventory, backlog, pipeline,
                     and recent history window. Zero inter-echelon coordination.
                 </p>
             </div>
             <div class="sca-card" style="border-left: 4px solid {SYSTEM_COLORS['system_4']};">
                 <h4>System 4: Multi-Agent Info Chain</h4>
                 <p style="font-size: 0.85rem; color: #94A3B8;">
-                    Echelon agents execute in sequence with shared global visibility into upstream 
+                    Echelon agents execute in sequence with shared global visibility into upstream
                     and downstream stock positions to mitigate bullwhip amplification.
                 </p>
             </div>
@@ -173,14 +168,14 @@ if selected_page == "1. Overview":
             <div class="sca-card" style="border-left: 4px solid {SYSTEM_COLORS['system_5']};">
                 <h4>System 5: Multi-Agent with Tools</h4>
                 <p style="font-size: 0.85rem; color: #94A3B8;">
-                    Modular CrewAI agent roles (Demand, Inventory, Procurement) that invoke pure deterministic 
+                    Modular CrewAI agent roles (Demand, Inventory, Procurement) that invoke pure deterministic
                     tools (<code>forecast_demand</code>, <code>eoq_quantity</code>, <code>ss_policy_order</code>).
                 </p>
             </div>
             <div class="sca-card" style="border-left: 4px solid {SYSTEM_COLORS['system_6']};">
                 <h4>System 6: Orchestrated Multi-Agent</h4>
                 <p style="font-size: 0.85rem; color: #94A3B8;">
-                    Central OrchestratorAgent that detects proposal conflicts, shortcuts consensus steps to save cost, 
+                    Central OrchestratorAgent that detects proposal conflicts, shortcuts consensus steps to save cost,
                     and coordinates bounded &le;2 round negotiations on divergence.
                 </p>
             </div>
@@ -226,11 +221,11 @@ if selected_page == "1. Overview":
     st.markdown("### 4. Base Paper Reference")
     st.markdown(
         """
-        > **Foundational Literature:**  
-        > **Sterman, J. D. (1989).** *"Modeling Managerial Behavior: Misperceptions of Feedback in a Dynamic Decision Making Experiment."* **Management Science**, 35(3), 321–339.  
-        > Explores human cognitive bias, order overreaction, and phase delays causing severe supply chain oscillations (Bullwhip Effect).  
-        >  
-        > **SCA Research Goal:**  
+        > **Foundational Literature:**
+        > **Sterman, J. D. (1989).** *"Modeling Managerial Behavior: Misperceptions of Feedback in a Dynamic Decision Making Experiment."* **Management Science**, 35(3), 321–339.
+        > Explores human cognitive bias, order overreaction, and phase delays causing severe supply chain oscillations (Bullwhip Effect).
+        >
+        > **SCA Research Goal:**
         > Investigating whether modern LLM multi-agent architectures overcome Sterman's classical misperceptions of feedback, or whether unconstrained negotiation introduces new stochastic instabilities.
         """
     )
@@ -294,7 +289,7 @@ elif selected_page == "2. Real Data & Scenarios":
     st.markdown("---")
     st.markdown("### 3. 90-Day Scenario Windows")
     sc_col1, sc_col2, sc_col3 = st.columns(3)
-    for idx, (s_key, s_data) in enumerate(meta["scenarios"].items()):
+    for idx, (_s_key, s_data) in enumerate(meta["scenarios"].items()):
         col_target = [sc_col1, sc_col2, sc_col3][idx]
         with col_target:
             st.markdown(
@@ -374,7 +369,7 @@ elif selected_page == "4. GLM Real Runs":
     st.markdown(
         """
         <div class="sca-banner-warning">
-            ⚠️ <strong>METHODOLOGICAL NOTE:</strong> Single runs (n=1 per cell): descriptive case studies, 
+            ⚠️ <strong>METHODOLOGICAL NOTE:</strong> Single runs (n=1 per cell): descriptive case studies,
             not statistical findings. Never rank n=1 results as winners.
         </div>
         """,
@@ -448,7 +443,7 @@ elif selected_page == "6. Mock vs GLM":
     st.markdown(
         """
         <div class="sca-banner-info">
-            ℹ️ <strong>CONTROL NOTE:</strong> MockLLM is a scripted control, not an LLM. 
+            ℹ️ <strong>CONTROL NOTE:</strong> MockLLM is a scripted control, not an LLM.
             Comparing system plumbing, latency overhead, fallback resilience, and structured schema handling.
         </div>
         """,

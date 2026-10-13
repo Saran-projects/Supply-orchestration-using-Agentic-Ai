@@ -31,7 +31,7 @@ from sca.dashboard.queries import (
     get_step_comparison_s3_vs_s6,
     load_demand_series_sample,
 )
-from sca.db import SCHEMA_DDL, init_schema
+from sca.db import init_schema
 
 
 @pytest.fixture
@@ -183,7 +183,7 @@ def fixture_db_path(tmp_path: Path) -> Path:
     conn.execute(
         """
         INSERT INTO metrics (metric_id, run_id, metric_name, metric_value, category)
-        VALUES 
+        VALUES
             ('m_01', 'baseline_s_S_shock_seed_42', 'total_cost', 15420.0, 'financial'),
             ('m_02', 'baseline_s_S_shock_seed_42', 'bullwhip_ratio_retailer', 1.85, 'stability'),
             ('m_03', 'baseline_s_S_shock_seed_42', 'bullwhip_ratio_wholesaler', 2.10, 'stability'),

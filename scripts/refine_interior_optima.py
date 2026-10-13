@@ -9,18 +9,16 @@ from __future__ import annotations
 
 import itertools
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
-import numpy as np
 import pandas as pd
+from tune_benchmarks_v2_1 import evaluate_config_across_tuning_set
 
 from sca.data.scenarios import generate_scenarios
-from sca.systems.base import get_system
-from tune_benchmarks_v2_1 import evaluate_config_across_tuning_set
 
 logging.basicConfig(level=logging.WARNING)
 

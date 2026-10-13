@@ -146,11 +146,11 @@ class InventoryPolicyConfig(BaseModel):
 class FourEchelonConfig(BaseModel):
     """Configuration for 4-echelon serial beer-game simulation."""
 
-    initial_inventory: float = Field(default=200.0, ge=0.0)
+    initial_inventory: float = Field(default=687.0, ge=0.0)
     initial_backlog: float = Field(default=0.0, ge=0.0)
     holding_cost_per_unit: float = Field(default=0.50, ge=0.0)
-    backlog_cost_multiplier: float = Field(default=10.0, ge=1.0, description="Backlog cost multiple relative to holding cost")
-    backlog_cost_per_unit: float = Field(default=5.00, ge=0.0)
+    backlog_cost_multiplier: float = Field(default=5.0, ge=1.0, description="Backlog cost multiple relative to holding cost")
+    backlog_cost_per_unit: float = Field(default=2.50, ge=0.0)
     manufacturer_capacity: float = Field(default=300.0, gt=0.0)
     history_window: int = Field(default=14, gt=0)
     default_lead_time: int = Field(default=2, ge=0)
@@ -172,6 +172,21 @@ class FourEchelonConfig(BaseModel):
     tuned_ss_s_factor: float = Field(default=1.2, ge=0.0, description="Tuned (s,S) reorder point factor s")
     tuned_ss_S_factor: float = Field(default=0.25, ge=0.0, description="Tuned (s,S) order-up-to factor S")
     tuning_seeds_used: List[int] = Field(default_factory=lambda: [100, 101, 102, 103, 104])
+    tool_mode: str = Field(
+        default="deterministic",
+        description="Tool execution mode: 'deterministic' | 'llm_function_calling'. "
+        "In deterministic mode: deterministic tools plus LLM decision and negotiation.",
+    )
+
+    @field_validator("tool_mode")
+    @classmethod
+    def _validate_tool_mode(cls, v: str) -> str:
+        mode = v.lower().strip()
+        if mode not in ("deterministic", "llm_function_calling"):
+            raise ValueError(
+                f"Invalid tool_mode '{v}'. Must be 'deterministic' or 'llm_function_calling'."
+            )
+        return mode
 
 
 class SimConfig(BaseModel):
@@ -282,11 +297,20 @@ class ModelEntryConfig(BaseModel):
     max_tokens: int = Field(default=2048, gt=0)
     timeout_s: float = Field(default=60.0, gt=0.0)
     price_per_1k_input: Union[float, str]
+    price_per_1k_cached_input: Optional[Union[float, str]] = None
     price_per_1k_output: Union[float, str]
     supports_json_schema: bool = True
     enabled: bool = True
     max_concurrency: int = Field(default=10, gt=0)
     requests_per_minute: int = Field(default=60, gt=0)
+    reasoning_tokens: Optional[Union[int, str, bool]] = Field(
+        default=None,
+        description="Optional parameter to limit or disable reasoning tokens (e.g. 'disabled', 0, False, or max count)",
+    )
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        description="Optional reasoning effort setting ('low', 'medium', 'high', 'none')",
+    )
 
     @model_validator(mode="after")
     def validate_todo_guard(self) -> "ModelEntryConfig":
@@ -312,6 +336,15 @@ class ModelEntryConfig(BaseModel):
                     raise ValueError(
                         f"Model '{self.name}' has invalid price_per_1k_input: '{self.price_per_1k_input}'"
                     ) from err
+            # Check price_per_1k_cached_input
+            if self.price_per_1k_cached_input is not None and isinstance(self.price_per_1k_cached_input, str):
+                if "TODO" not in self.price_per_1k_cached_input:
+                    try:
+                        self.price_per_1k_cached_input = float(self.price_per_1k_cached_input)
+                    except ValueError as err:
+                        raise ValueError(
+                            f"Model '{self.name}' has invalid price_per_1k_cached_input: '{self.price_per_1k_cached_input}'"
+                        ) from err
             # Check price_per_1k_output
             if isinstance(self.price_per_1k_output, str):
                 if "TODO" in self.price_per_1k_output:
@@ -339,6 +372,9 @@ class ModelsConfig(BaseModel):
     opik_enabled: bool = Field(default=False, description="Enable Opik observability tracing")
     cache_dir: Path = Field(default=Path(".cache/llm"), description="Local disk cache directory")
     max_retries: int = Field(default=3, ge=0)
+    budget_usd: float = Field(default=4.00, description="Total authorized credit budget in USD")
+    reserve_usd: float = Field(default=0.40, description="Safety reserve in USD")
+    hard_cap_usd: float = Field(default=3.60, description="Hard cap in USD (4.00 credit minus reserve)")
     models: List[ModelEntryConfig] = Field(default_factory=list)
     providers: Dict[str, ProviderConfig] = Field(default_factory=dict)
     agents: Dict[str, AgentModelAllocation] = Field(default_factory=dict)

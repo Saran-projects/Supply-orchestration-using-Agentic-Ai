@@ -84,7 +84,7 @@ def test_valid_output_path(temp_db: Path):
     assert sys_name == "single_agent"
     assert ech == "retailer"
     assert step_num == 1
-    assert p_ver == "single_agent_v1"
+    assert p_ver == "single_agent_v3"
     assert retries == 0
     assert fallback is False
     assert qty == 110.0

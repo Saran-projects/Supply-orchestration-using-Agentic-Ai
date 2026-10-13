@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -351,3 +351,201 @@ class SmoothedOrderUpToOutput(BaseModel):
     include_lead_time_variance: bool = Field(
         description="Whether lead-time variance was included in safety stock."
     )
+
+
+# ---------------------------------------------------------------------------
+# 6. Smoothed Forecast
+# ---------------------------------------------------------------------------
+class SmoothedForecastInput(BaseModel):
+    """Input parameters for exponential smoothing demand forecast."""
+
+    current_demand: float = Field(
+        ...,
+        ge=0.0,
+        description="Latest realized demand observation.",
+    )
+    previous_smoothed_demand: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        description="Previous smoothed demand forecast.",
+    )
+    alpha: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Exponential smoothing weight alpha in [0, 1].",
+    )
+
+
+class SmoothedForecastOutput(BaseModel):
+    """Output from exponential smoothing forecast."""
+
+    smoothed_demand: float = Field(
+        description="Exponentially smoothed demand estimate."
+    )
+    current_demand: float = Field(
+        description="Observed current demand."
+    )
+    alpha: float = Field(
+        description="Smoothing factor alpha used."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. Order-Up-To Target
+# ---------------------------------------------------------------------------
+class OrderUpToTargetInput(BaseModel):
+    """Input parameters for order-up-to target S calculation."""
+
+    forecast_demand: float = Field(
+        ...,
+        ge=0.0,
+        description="Forecast demand rate (e.g. smoothed demand).",
+    )
+    lead_time_mean: float = Field(
+        ...,
+        ge=0.0,
+        description="Mean lead time in periods.",
+    )
+    lead_time_std: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Standard deviation of lead time.",
+    )
+    demand_std: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Standard deviation of demand.",
+    )
+    z: float = Field(
+        default=2.0,
+        ge=0.0,
+        description="Safety factor z.",
+    )
+    include_lead_time_variance: bool = Field(
+        default=True,
+        description="Whether to include lead-time variance in safety stock calculation.",
+    )
+
+
+class OrderUpToTargetOutput(BaseModel):
+    """Calculated base-stock target level and safety buffer."""
+
+    order_up_to_target: float = Field(
+        description="Calculated base-stock target level S = L * d_hat + SS."
+    )
+    safety_stock: float = Field(
+        description="Calculated safety stock buffer SS."
+    )
+    sigma_ltd: float = Field(
+        description="Standard deviation of lead-time demand."
+    )
+    expected_lead_time_demand: float = Field(
+        description="Expected lead-time demand L * forecast_demand."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8. Smoothed Order
+# ---------------------------------------------------------------------------
+class SmoothedOrderInput(BaseModel):
+    """Input parameters for order smoothing with beta."""
+
+    order_up_to_target: float = Field(
+        ...,
+        ge=0.0,
+        description="Target inventory position level S.",
+    )
+    inventory_position: float = Field(
+        ...,
+        description="Current inventory position IP = inventory + pipeline - backlog.",
+    )
+    last_order: float = Field(
+        ...,
+        ge=0.0,
+        description="Order placed at previous step.",
+    )
+    beta: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="Order smoothing factor beta in [0, 1].",
+    )
+
+
+class SmoothedOrderOutput(BaseModel):
+    """Output from smoothed ordering rule."""
+
+    smoothed_order: float = Field(
+        description="Final smoothed order quantity beta * raw + (1 - beta) * last_order."
+    )
+    raw_order: float = Field(
+        description="Raw unsmoothed order deficit max(0, S - IP)."
+    )
+    beta: float = Field(
+        description="Order smoothing factor beta used."
+    )
+    inventory_position: float = Field(
+        description="Inventory position used."
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. Regime Detector
+# ---------------------------------------------------------------------------
+class RegimeDetectorInput(BaseModel):
+    """Input parameters for demand regime detection."""
+
+    demand_history: List[float] = Field(
+        ...,
+        min_length=1,
+        description="Historical observed demand series in chronological order.",
+    )
+    short_window: int = Field(
+        default=5,
+        gt=0,
+        description="Short-term moving average window length.",
+    )
+    long_window: int = Field(
+        default=15,
+        gt=0,
+        description="Long-term moving average window length.",
+    )
+    shock_threshold: float = Field(
+        default=1.30,
+        ge=1.0,
+        description="Short/long mean ratio threshold to trigger shock regime.",
+    )
+    trend_threshold: float = Field(
+        default=1.15,
+        ge=1.0,
+        description="Short/long mean ratio threshold to trigger trend regime.",
+    )
+
+
+class RegimeDetectorOutput(BaseModel):
+    """Classification output from demand regime detector."""
+
+    regime: str = Field(
+        description="Detected regime: 'stable' | 'trend' | 'shock'."
+    )
+    confidence: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Confidence score in [0.0, 1.0].",
+    )
+    short_mean: float = Field(
+        description="Short-term window mean demand."
+    )
+    long_mean: float = Field(
+        description="Long-term window mean demand."
+    )
+    ratio: float = Field(
+        description="Ratio of short-term mean to long-term mean."
+    )
+    details: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Detailed diagnostics and CUSUM statistics.",
+    )
+

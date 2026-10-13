@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,7 +20,7 @@ import sca.baselines  # noqa: F401 (Registers baseline policies)
 from sca.config import get_config
 from sca.data.scenarios import LeadTimeSampler, generate_scenarios
 from sca.sim.environment import ECHELONS, BeerGameEnv
-from sca.sim.metrics import calculate_bullwhip_ratio, compute_simulation_metrics
+from sca.sim.metrics import compute_simulation_metrics
 from sca.systems.base import get_system
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -51,7 +52,7 @@ def run_verification(seed: int = 42, warmup_steps: int = 5):
     states = env.reset(seed=seed)
 
     horizon = len(shock_sc.demand)
-    for t in range(horizon):
+    for _t in range(horizon):
         orders = sys2.decide_orders(states)
         states = env.step(orders)
 
@@ -63,7 +64,7 @@ def run_verification(seed: int = 42, warmup_steps: int = 5):
     print("=" * 80)
     print(f"BULLWHIP CALCULATION VERIFICATION: SYSTEM 2 (EOQ) | SHOCK SCENARIO | SEED {seed}")
     print(f"Warm-up steps: {warmup_steps} (Evaluated steps: {warmup_steps}..{horizon-1} = {horizon - warmup_steps} steps)")
-    print(f"Chain Initialization: Steady-State (in-transit pipelines populated)")
+    print("Chain Initialization: Steady-State (in-transit pipelines populated)")
     print("=" * 80)
     print(f"{'Echelon':<15} | {'Var(Demand)':<14} | {'Var(Orders)':<14} | {'Bullwhip Ratio':<15} | {'Total Cost ($)':<14}")
     print("-" * 80)

@@ -40,10 +40,19 @@ class MultiAgentInfoSystem(LLMOrderingSystemBase):
         self,
         name: str = "multi_agent_info",
         config: Optional[Dict[str, Any]] = None,
+        tool_mode: str = "deterministic",
         **kwargs: Any,
     ):
-        super().__init__(name=name, config=config, prompt_version="multi_agent_info_v1", **kwargs)
-        self.prompt_template = load_prompt_template("multi_agent_info_v1.txt")
+        cfg = config or {}
+        p_ver = cfg.get("prompt_version") or kwargs.get("prompt_version", "v3")
+        if p_ver in ("v3", "multi_agent_info_v3"):
+            tpl_file = "multi_agent_info_v3.txt"
+            ver_tag = "multi_agent_info_v3"
+        else:
+            tpl_file = "multi_agent_info_v1.txt"
+            ver_tag = "multi_agent_info_v1"
+        super().__init__(name=name, config=config, prompt_version=ver_tag, tool_mode=tool_mode, **kwargs)
+        self.prompt_template = load_prompt_template(tpl_file)
 
     def format_echelon_prompt(
         self,
@@ -51,22 +60,48 @@ class MultiAgentInfoSystem(LLMOrderingSystemBase):
         state: EchelonState,
         max_order: float,
         shared_info: str,
-    ) -> str:
+    ) -> tuple[str, Optional[float]]:
         """Format multi-agent prompt with fixed instructions first, local state and shared info last."""
         history_str = format_history_summary(state.history_window)
-        return self.prompt_template.format(
-            echelon=echelon.capitalize(),
-            max_order=f"{max_order:.1f}",
-            step=state.step,
-            current_demand=f"{state.current_demand:.1f}",
-            inventory=f"{state.inventory:.1f}",
-            backlog=f"{state.backlog:.1f}",
-            pipeline=f"{state.pipeline:.1f}",
-            incoming_shipments=f"{state.incoming_shipments:.1f}",
-            lead_time=state.lead_time,
-            history_summary=history_str,
-            shared_info=shared_info,
-        )
+        recommendation: Optional[float] = None
+
+        if self.prompt_version in ("v3", "multi_agent_info_v3"):
+            tool_data = self.compute_deterministic_tools(state, echelon)
+            recommendation = tool_data["recommendation"]
+            prompt = self.prompt_template.format(
+                echelon=echelon.capitalize(),
+                max_order=f"{max_order:.1f}",
+                step=state.step,
+                current_demand=f"{state.current_demand:.1f}",
+                inventory=f"{state.inventory:.1f}",
+                backlog=f"{state.backlog:.1f}",
+                pipeline=f"{state.pipeline:.1f}",
+                incoming_shipments=f"{state.incoming_shipments:.1f}",
+                lead_time=state.lead_time,
+                last_5_orders=str(tool_data["last_5_orders"]),
+                forecast=f"{tool_data['forecast']:.1f}",
+                eoq=f"{tool_data['eoq']:.1f}",
+                recommendation=f"{tool_data['recommendation']:.1f}",
+                safe_range=f"[{tool_data['safe_range'][0]:.1f}, {tool_data['safe_range'][1]:.1f}]",
+                history_summary=history_str,
+                shared_info=shared_info,
+            )
+        else:
+            prompt = self.prompt_template.format(
+                echelon=echelon.capitalize(),
+                max_order=f"{max_order:.1f}",
+                step=state.step,
+                current_demand=f"{state.current_demand:.1f}",
+                inventory=f"{state.inventory:.1f}",
+                backlog=f"{state.backlog:.1f}",
+                pipeline=f"{state.pipeline:.1f}",
+                incoming_shipments=f"{state.incoming_shipments:.1f}",
+                lead_time=state.lead_time,
+                history_summary=history_str,
+                shared_info=shared_info,
+            )
+
+        return prompt, recommendation
 
     def decide_orders(self, states: Dict[str, EchelonState]) -> Dict[str, float]:
         """Decide orders for all echelons with shared supply chain visibility."""
@@ -78,7 +113,7 @@ class MultiAgentInfoSystem(LLMOrderingSystemBase):
                 continue
             state = states[echelon]
             max_order = self.get_max_order(echelon)
-            prompt = self.format_echelon_prompt(
+            prompt, rec = self.format_echelon_prompt(
                 echelon=echelon,
                 state=state,
                 max_order=max_order,
@@ -90,6 +125,7 @@ class MultiAgentInfoSystem(LLMOrderingSystemBase):
                 state=state,
                 prompt=prompt,
                 max_order=max_order,
+                recommendation=rec,
             )
             orders[echelon] = qty
 

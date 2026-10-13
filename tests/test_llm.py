@@ -87,8 +87,8 @@ def mock_client(temp_cache, temp_db):
                 temperature=0.2,
                 max_tokens=2048,
                 timeout_s=60.0,
-                price_per_1k_input=0.000154,
-                price_per_1k_output=0.00044,
+                price_per_1k_input=0.00007,
+                price_per_1k_output=0.00020,
                 supports_json_schema=True,
                 enabled=True,
                 max_concurrency=10,
@@ -126,9 +126,10 @@ def test_models_yaml_loading():
     assert glm is not None
     assert glm.enabled is True
     assert glm.provider == "openai_compatible"
-    assert glm.base_url == "https://api.isoquant.ai/v1"
-    assert glm.price_per_1k_input == 0.000154
-    assert glm.price_per_1k_output == 0.00044
+    assert glm.price_per_1k_input == 0.000027
+    assert glm.price_per_1k_cached_input == 0.000018
+    assert glm.price_per_1k_output == 0.00049
+    assert glm.reasoning_tokens == "disabled"
 
     # Disabled models with TODO must be permitted
     openai_main = cfg.get_model("openai-main")
@@ -397,15 +398,15 @@ def test_structured_output_retry_failure_raises_error(mock_client, temp_db):
 # ---------------------------------------------------------------------------
 def test_cost_calculation_from_prices(mock_client):
     """Verify cost calculation derives from model entry prices."""
-    # glm-isoquant: price_per_1k_input 0.000154, price_per_1k_output 0.00044
+    # glm-isoquant: price_per_1k_input 0.00007, price_per_1k_output 0.00020
     cost = calculate_cost("glm-isoquant", prompt_tokens=1000, completion_tokens=1000, config=mock_client.config)
-    # Expected: (1000/1000 * 0.000154) + (1000/1000 * 0.00044) = 0.000594
-    assert cost == pytest.approx(0.000594)
+    # Expected: (1000/1000 * 0.00007) + (1000/1000 * 0.00020) = 0.000270
+    assert cost == pytest.approx(0.000270)
 
     # 10,000 prompt tokens, 5,000 completion tokens:
-    # (10 * 0.000154) + (5 * 0.00044) = 0.00154 + 0.00220 = 0.00374
+    # (10 * 0.00007) + (5 * 0.00020) = 0.00070 + 0.00100 = 0.00170
     cost_large = calculate_cost("glm-isoquant", prompt_tokens=10000, completion_tokens=5000, config=mock_client.config)
-    assert cost_large == pytest.approx(0.00374)
+    assert cost_large == pytest.approx(0.00170)
 
     # Fallback to standard table for gpt-4o-mini ($0.15/1M in, $0.60/1M out)
     cost_mini = calculate_cost("gpt-4o-mini", 1_000_000, 1_000_000)
@@ -430,8 +431,8 @@ def test_no_api_key_in_logs(caplog, temp_cache, temp_db, monkeypatch):
                 model_id="glm-5.3-flash",
                 base_url="https://api.isoquant.ai/v1",
                 api_key_env="ISOQUANT_API_KEY",
-                price_per_1k_input=0.000154,
-                price_per_1k_output=0.00044,
+                price_per_1k_input=0.00007,
+                price_per_1k_output=0.00020,
                 enabled=True,
             )
         ],
