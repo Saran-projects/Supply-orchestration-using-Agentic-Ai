@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from sca.config import get_config
 from sca.db import get_duckdb_connection
@@ -25,8 +25,26 @@ logger = logging.getLogger(__name__)
 class OrderDecision(BaseModel):
     """Replenishment decision made by an echelon ordering agent."""
 
-    quantity: float = Field(..., description="Replenishment order quantity to place upstream")
+    regime: str = Field(default="stable", description="Detected demand regime: 'stable', 'trend', or 'shock'")
+    order: Optional[float] = Field(default=None, description="Replenishment order quantity")
+    quantity: Optional[float] = Field(default=None, description="Replenishment order quantity alias")
+    rationale: str = Field(default="", description="Short rationale <= 30 words")
     reasoning: str = Field(default="", description="Short reasoning explaining the replenishment decision")
+
+    @model_validator(mode="after")
+    def unify_fields(self) -> OrderDecision:
+        if self.order is None and self.quantity is not None:
+            self.order = float(self.quantity)
+        elif self.quantity is None and self.order is not None:
+            self.quantity = float(self.order)
+        elif self.order is None and self.quantity is None:
+            raise ValueError("Either 'order' or 'quantity' must be provided.")
+
+        if not self.rationale and self.reasoning:
+            self.rationale = self.reasoning
+        elif not self.reasoning and self.rationale:
+            self.reasoning = self.rationale
+        return self
 
 
 def get_prompts_dir() -> Path:

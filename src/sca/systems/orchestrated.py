@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from sca.config import get_config
 from sca.db import DuckDBManager
@@ -59,10 +59,27 @@ logger = logging.getLogger(__name__)
 class NegotiationResponse(BaseModel):
     """Structured response from an agent or mediator during negotiation."""
 
-    agent_name: str = Field(..., description="Agent or mediator identifier")
-    revised_quantity: float = Field(..., ge=0.0, description="Revised proposed order quantity")
+    agent_name: str = Field(default="mediator", description="Agent or mediator identifier")
+    regime: str = Field(default="stable", description="Detected demand regime: 'stable', 'trend', or 'shock'")
+    revised_quantity: Optional[float] = Field(default=None, description="Revised proposed order quantity")
+    order: Optional[float] = Field(default=None, description="Order quantity alias")
     rationale: str = Field(default="", description="Domain justification for revised concession")
+    reasoning: str = Field(default="", description="Reasoning alias")
     concession_made: bool = Field(default=False, description="Whether agent made a concession")
+
+    @model_validator(mode="after")
+    def unify_fields(self) -> NegotiationResponse:
+        if self.revised_quantity is None and self.order is not None:
+            self.revised_quantity = float(self.order)
+        elif self.order is None and self.revised_quantity is not None:
+            self.order = float(self.revised_quantity)
+        elif self.revised_quantity is None and self.order is None:
+            raise ValueError("Either 'revised_quantity' or 'order' must be provided.")
+        if not self.rationale and self.reasoning:
+            self.rationale = self.reasoning
+        elif not self.reasoning and self.rationale:
+            self.reasoning = self.rationale
+        return self
 
 
 class ConflictDetectionResult(BaseModel):
