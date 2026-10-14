@@ -175,3 +175,62 @@ All primary comparisons evaluate against the frozen benchmark distributions on t
 2. **Unconditional Publication**:
    - All runs, whether conforming or null/negative results, are logged in `runs_registry` and DuckDB telemetry.
    - No selective reporting or seed omission is permitted.
+
+---
+
+## Amendment A1 (dated 2026-10-14): design v5 is the third and last paid tuning iteration
+
+1. **Agent design v5** (`docs/agent_design_v5.md`, prompt version `v5.0`) replaces free-form order quantities with a
+   fixed action space. The LLM picks follow / boost_small / boost_large / trim, and code computes the order inside the shared safe range.
+   Design v5 counts as the **third and last paid tuning iteration** under section 5. The two earlier paid
+   iterations were v4.0 and v4.1 (`docs/prompt_changelog.md`).
+2. **Bug fixes do not count as tuning iterations.** A bug fix corrects code so it does what the documented design says,
+   without changing prompts, design or tuned parameters (e.g. the fixes listed in `docs/diagnosis_phase5.md`).
+   Each fix is listed in `docs/prompt_changelog.md` with its date.
+3. **Any later design change needs a new dated amendment** to this protocol before it is run. A design change covers
+   prompts, action space, references, band, multipliers, information or tools available to a system, or orchestration.
+   Such an amendment must state why the change is made, and whether results obtained before it remain comparable.
+4. The v5 action multipliers were tuned without any LLM on seeds 100–104 under `docs/tuning_rule_v2_1.md`, and frozen in
+   `configs/agent_v5.yaml` (follow 1.0, boost_small 1.2, boost_large 1.8, trim 0.9). No candidate met fill rate ≥ 99%,
+   so the rule's caveat fallback applied, with trim constrained to ≤ 0.95 (user decision, 2026-10-14). They are not
+   re-tuned on paid runs.
+
+---
+
+## Amendment A2 (dated 2026-10-14): design v5.1 (LLM tool selection and S6 negotiation) and a model comparison
+
+Written before any v5.1 run. It does not change Amendment A1 or any v5 result.
+
+1. **Why.** In v5 the tools are deterministic and System 6 does not negotiate, so tool-choice accuracy, parameter
+   accuracy and negotiation efficiency cannot be measured. The user asked for these metrics for every model.
+2. **Design v5.1** (`tool_mode: llm_tools`; Systems 5 and 6 only; Systems 3 and 4 have no tools and stay on v5.0):
+   - **Tool request:** before each decision, the model receives the state and a catalogue of five tools
+     (`forecast_demand`, `regime_detector`, `smoothed_order_up_to`, `eoq_quantity`, `safe_order_range`).
+     It returns which tools to call and their inputs, as JSON. Code runs the requested tools with the model's inputs and
+     shows the results in the decision prompt.
+   - **Tool-choice accuracy:** a decision counts as correct when the model requests both required tools
+     (`regime_detector`, `smoothed_order_up_to`) and no tool outside the relevant set
+     (required tools plus `forecast_demand`).
+   - **Parameter accuracy:** the share of requested relevant calls whose inputs match the observed state
+     (inventory, pipeline, backlog and last order within ±0.5 or 1%; demand history equal to the received demand shown).
+   - **Orders are unchanged.** The order is still `clip(reference × multiplier)` with the reference computed by code from
+     the true state, so outcomes stay comparable with v5. Tool calls are scored, but they do not move the order.
+   - **System 6 negotiation:** after the orchestrator's decision, the three deterministic specialists respond.
+     A specialist objects when its nearest action differs from the chosen action and the chosen order is more than 15%
+     from its proposal. If any specialist objects, the model decides again with the objections shown, for at most
+     2 rounds. Rounds and messages per decision are logged.
+3. **Model comparison (exploratory, descriptive only):**
+   - Systems 3–6 × {glm-5.3-flash (Isoquant), `deepseek/deepseek-v4.1-flash`, `google/gemini-3.8-flash` (OpenRouter)}
+     × stable, seasonal and shock × tuning seed 102.
+   - One run per cell: no statistical claims, and no tuning on these results.
+   - Multipliers, prompts v5.0/v5.1, reference and band stay frozen.
+4. **Safeguards:**
+   - Budget hard stop at $2.00 across all models for this task.
+   - A dry-run projection must fit before any paid call.
+   - Abort on HTTP 401/402/403.
+   - A run with fallbacks above 5%, or with LLM calls fewer than decisions, is invalid and stops the batch.
+5. **Iterations:** v5.1 adds a measurement layer and negotiation for the requested metrics. It is not a tuning iteration:
+   nothing is tuned on its results. Any change after seeing them needs a new dated amendment.
+6. **Dated note (2026-10-14, before any comparison run):** the dry run, using output tokens measured on one probe call
+   per model, projected $2.94. The user raised the budget hard stop for this task from $2.00 to **$3.50** and kept
+   `google/gemini-3.8-flash`. Nothing else changed.

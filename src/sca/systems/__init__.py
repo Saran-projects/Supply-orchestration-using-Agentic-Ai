@@ -13,6 +13,12 @@ from sca.systems.multi_agent_info import MultiAgentInfoSystem
 from sca.systems.multi_agent_tools import AgentProposal, MultiAgentToolsSystem
 from sca.systems.orchestrated import OrchestratedSystem, OrchestratorAgent
 from sca.systems.single_agent import SingleAgentSystem
+from sca.systems.v5 import (
+    MultiAgentInfoV5,
+    MultiAgentToolsV5,
+    OrchestratedV5,
+    SingleAgentV5,
+)
 
 __all__ = [
     "OrderingSystem",
@@ -27,4 +33,8 @@ __all__ = [
     "MultiAgentToolsSystem",
     "OrchestratorAgent",
     "OrchestratedSystem",
+    "SingleAgentV5",
+    "MultiAgentInfoV5",
+    "MultiAgentToolsV5",
+    "OrchestratedV5",
 ]

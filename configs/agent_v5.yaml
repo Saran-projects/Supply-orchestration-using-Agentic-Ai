@@ -1,0 +1,56 @@
+# Agent design v5 (docs/agent_design_v5.md) — shared by Systems 3-6.
+# The LLM picks an action; code computes order = clip(reference x multiplier[action]) into the safe range.
+prompt_version: "v5.0"
+
+# Action multipliers. Starting values 1.0 / 1.15 / 1.4 / 0.85; tuned on seeds 100-104 with
+# docs/tuning_rule_v2_1.md (scripts/v5_scripted_tuning.py). "follow" is fixed at 1.0.
+multipliers:
+  follow: 1.0
+  boost_small: 1.2
+  boost_large: 1.8
+  trim: 0.9
+multipliers_frozen: true
+multipliers_tuning_log: "results/v5_multiplier_tuning.csv (2026-10-14, seeds 100-104, CAVEAT: no candidate reaches FR >= 99%: highest fill rate, then lowest cost; cost=38675, FR=97.82, BW=12.71)"
+
+# Basic reference (Systems 3 and 4): max(0, mean_W(received demand) + (S_basic - IP) / H),
+# S_basic = mean_W(received demand) x mean lead time. No safety stock, no smoothing, no regime flag.
+reference:
+  window: 5
+  horizon: 4.0
+
+# Deterministic regime detector (regime_detector tool). Its label alone drives band widening.
+detector:
+  short_window: 5
+  long_window: 15
+  shock_threshold: 1.30
+  trend_threshold: 1.15
+  shock_duration: 4      # steps the shock phase stays active after a shock signal
+  after_shock_steps: 4   # steps labelled "after_shock" once the shock phase ends
+
+# Safe order range (shared safe_order_bounds). widen_in_shock applies to Systems 5 and 6 only.
+band:
+  delta: 0.8
+  delta_shock: 0.8
+  forecast_cap_multiple: 1.2
+
+limits:
+  max_order: 500.0
+  manufacturer_capacity: 300.0
+
+# Smoothed order-up-to tool parameters for the S5/S6 reference (frozen tuned System 2c).
+tool_params_path: "results/baselines_frozen.json"
+
+# Design v5.1 (protocol Amendment A2): "deterministic" = v5; "llm_tools" = the model picks tools and their inputs
+# (Systems 5 and 6; scored, results shown to the model; the order still uses the code-computed reference) and
+# System 6 negotiates with its deterministic specialists. Set per run via system config {"tool_mode": "llm_tools"}.
+tool_mode: "deterministic"
+llm_tools:
+  prompt_version: "v5.1"
+  required: ["regime_detector", "smoothed_order_up_to"]
+  allowed: ["forecast_demand"]
+  param_tolerance_abs: 0.5
+  param_tolerance_rel: 0.01
+  max_calls: 5
+negotiation:
+  max_rounds: 2
+  objection_threshold: 0.15

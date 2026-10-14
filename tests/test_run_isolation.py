@@ -26,6 +26,10 @@ REGISTERED_SYSTEM_IDS = [
     "multi_agent_info",
     "multi_agent_tools",
     "orchestrated",
+    "single_agent_v5",
+    "multi_agent_info_v5",
+    "multi_agent_tools_v5",
+    "orchestrated_v5",
 ]
 
 TARGET_SEED = 104
