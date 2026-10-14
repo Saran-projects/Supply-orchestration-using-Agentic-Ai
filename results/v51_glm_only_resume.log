@@ -1,0 +1,12 @@
+  glm-isoquant         output tokens/call 43 (measured): expected $0.125, worst $1.70
+  deepseek-v4.1-flash  output tokens/call 310 (measured): expected $0.944, worst $3.02
+  gemini-3.8-flash     output tokens/call 28 (measured): expected $1.874, worst $14.09
+Total expected $2.942 (worst $18.81); prior spend $0.5343; cap $3.50
+Runs to do: 7
+[23:59:14] glm-isoquant         S5 multi-agent tools   seasonal cost 24170 FR 96.6 BW 9.03 fb 0 usd 0.0311 | spent $0.6562
+[00:00:03] glm-isoquant         S5 multi-agent tools   stable   cost 20422 FR 100.0 BW 7.36 fb 0 usd 0.0307 | spent $0.6596
+[00:08:02] glm-isoquant         S6 orchestrated        stable   cost 20580 FR 100.0 BW 7.28 fb 0 usd 0.0406 | spent $0.6979
+[00:09:10] glm-isoquant         S6 orchestrated        seasonal cost 24181 FR 96.5 BW 9.09 fb 0 usd 0.0414 | spent $0.7031
+[00:15:24] glm-isoquant         S5 multi-agent tools   shock    cost 24961 FR 100.0 BW 4.00 fb 0 usd 0.0312 | spent $0.7371
+[00:20:44] glm-isoquant         S6 orchestrated        shock    cost 24860 FR 100.0 BW 4.14 fb 0 usd 0.0407 | spent $0.7577
+Total spend $0.7577 (cap $3.50)

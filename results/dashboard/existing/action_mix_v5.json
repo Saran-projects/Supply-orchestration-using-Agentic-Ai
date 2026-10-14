@@ -1,0 +1,74 @@
+[
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "distributor",
+  "follow": 0.5,
+  "boost_small": 0.15,
+  "boost_large": 0.0,
+  "trim": 0.35,
+  "fallback": 0.0
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "manufacturer",
+  "follow": 0.45,
+  "boost_small": 0.15,
+  "boost_large": 0.0,
+  "trim": 0.4,
+  "fallback": 0.0
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "retailer",
+  "follow": 0.7,
+  "boost_small": 0.08,
+  "boost_large": 0.02,
+  "trim": 0.2,
+  "fallback": 0.0
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "wholesaler",
+  "follow": 0.52,
+  "boost_small": 0.18,
+  "boost_large": 0.0,
+  "trim": 0.3,
+  "fallback": 0.0
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "distributor",
+  "follow": 0.6,
+  "boost_small": 0.1,
+  "boost_large": 0.0,
+  "trim": 0.3,
+  "fallback": 0.0
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "manufacturer",
+  "follow": 0.57,
+  "boost_small": 0.08,
+  "boost_large": 0.0,
+  "trim": 0.35,
+  "fallback": 0.0
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "retailer",
+  "follow": 0.65,
+  "boost_small": 0.05,
+  "boost_large": 0.0,
+  "trim": 0.3,
+  "fallback": 0.0
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "wholesaler",
+  "follow": 0.55,
+  "boost_small": 0.12,
+  "boost_large": 0.0,
+  "trim": 0.32,
+  "fallback": 0.0
+ }
+]

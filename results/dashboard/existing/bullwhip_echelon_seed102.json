@@ -1,0 +1,122 @@
+[
+ {
+  "system": "S1 (s,S) policy",
+  "echelon": "retailer",
+  "bullwhip": 1.26
+ },
+ {
+  "system": "S1 (s,S) policy",
+  "echelon": "wholesaler",
+  "bullwhip": 1.37
+ },
+ {
+  "system": "S1 (s,S) policy",
+  "echelon": "distributor",
+  "bullwhip": 1.42
+ },
+ {
+  "system": "S1 (s,S) policy",
+  "echelon": "manufacturer",
+  "bullwhip": 1.24
+ },
+ {
+  "system": "S2 EOQ",
+  "echelon": "retailer",
+  "bullwhip": 1.89
+ },
+ {
+  "system": "S2 EOQ",
+  "echelon": "wholesaler",
+  "bullwhip": 1.26
+ },
+ {
+  "system": "S2 EOQ",
+  "echelon": "distributor",
+  "bullwhip": 1.21
+ },
+ {
+  "system": "S2 EOQ",
+  "echelon": "manufacturer",
+  "bullwhip": 1.13
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "retailer",
+  "bullwhip": 1.609
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "wholesaler",
+  "bullwhip": 3.436
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "distributor",
+  "bullwhip": 1.824
+ },
+ {
+  "system": "S3 Single LLM agent",
+  "echelon": "manufacturer",
+  "bullwhip": 1.462
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "retailer",
+  "bullwhip": 4.398
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "wholesaler",
+  "bullwhip": 0.976
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "distributor",
+  "bullwhip": 0.822
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "echelon": "manufacturer",
+  "bullwhip": 0.793
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "echelon": "retailer",
+  "bullwhip": 4.38
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "echelon": "wholesaler",
+  "bullwhip": 0.94
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "echelon": "distributor",
+  "bullwhip": 0.83
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "echelon": "manufacturer",
+  "bullwhip": 0.83
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "echelon": "retailer",
+  "bullwhip": 4.32
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "echelon": "wholesaler",
+  "bullwhip": 0.97
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "echelon": "distributor",
+  "bullwhip": 0.82
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "echelon": "manufacturer",
+  "bullwhip": 0.8
+ }
+]

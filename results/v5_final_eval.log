@@ -1,0 +1,9 @@
+  S3 single agent: per run expected $0.0088 (85 output tokens/call, as measured on seed 102), worst $0.0824
+  S4 multi-agent info: per run expected $0.0096 (85 output tokens/call, as measured on seed 102), worst $0.0832
+  S5 multi-agent tools: per run expected $0.0098 (85 output tokens/call, as measured on seed 102), worst $0.0834
+  S6 orchestrated: per run expected $0.0102 (85 output tokens/call, as measured on seed 102), worst $0.0838
+Projected for 24 runs x 4 systems: expected $0.921, worst case (no retries) $7.987
+Prior spend $0.140; cap $1.20; the guard stops before any call that could cross the cap.
+15360 LLM calls at 60 RPM: at least 4.3 h
+Deterministic systems done.
+LLM runs to do: 96

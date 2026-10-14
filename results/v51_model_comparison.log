@@ -1,0 +1,7 @@
+  glm-isoquant         output tokens/call 43 (measured): expected $0.125, worst $1.70
+  deepseek-v4.1-flash  output tokens/call 310 (measured): expected $0.944, worst $3.02
+  gemini-3.8-flash     output tokens/call 28 (measured): expected $1.874, worst $14.09
+Total expected $2.942 (worst $18.81); prior spend $0.1823; cap $3.50
+Runs to do: 36
+HALT: gemini-3.8-flash S3 single agent stable: FatalAPIError: Fatal API error (HTTP 402) from 'gemini-3.8-flash': Error code: 402 - {'error': {'message': 'This request would exceed your available credits given your current in-flight requests. Retry after in-flight requests settle, or add credits.', 'code': 402, 'metadata': {'reason': 'in_flight_budget_exhausted', 'limit_source': 'openrouter_in_flight_budget', 'remedy_hint': 'Retry after your in-flight requests settle (see the Retry-After header). Adding credits at https://openrouter.ai/settings/credits raises your in-flight budget, up to a capped ceiling.', 'headers': {'Retry-After': '120'}, 'provider_name': None}}, 'user_id': 'user_3Kh2bvb62x0SugOa8HB3ikUmS8k'}
+Total spend $0.3684 (cap $3.50)

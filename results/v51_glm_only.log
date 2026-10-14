@@ -1,0 +1,8 @@
+  glm-isoquant         output tokens/call 43 (measured): expected $0.125, worst $1.70
+  deepseek-v4.1-flash  output tokens/call 310 (measured): expected $0.944, worst $3.02
+  gemini-3.8-flash     output tokens/call 28 (measured): expected $1.874, worst $14.09
+Total expected $2.942 (worst $18.81); prior spend $0.3684; cap $3.50
+Runs to do: 10
+[23:10:30] glm-isoquant         S3 single agent        seasonal cost 63436 FR 98.4 BW 22.60 fb 0 usd 0.0068 | spent $0.4073
+HALT: glm-isoquant S5 multi-agent tools stable: unexpected ConversionException: Conversion Error: Could not convert string 'forecast_demand,regime_detector,smoothed_order_up_to,safe_order_range' to INT32 when casting from source column tools_requested
+Total spend $0.5343 (cap $3.50)

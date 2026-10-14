@@ -1,0 +1,122 @@
+[
+ {
+  "system": "S1 (s,S) policy",
+  "scenario": "seasonal",
+  "total_cost": 19024.0,
+  "fill_rate": 0.9981,
+  "e2e_bullwhip": 6.9,
+  "stockout_steps": 3.0,
+  "runs": 8,
+  "key": "S1 (s,S) policy|seasonal"
+ },
+ {
+  "system": "S1 (s,S) policy",
+  "scenario": "shock",
+  "total_cost": 33826.0,
+  "fill_rate": 0.9749,
+  "e2e_bullwhip": 2.97,
+  "stockout_steps": 13.2,
+  "runs": 8,
+  "key": "S1 (s,S) policy|shock"
+ },
+ {
+  "system": "S1 (s,S) policy",
+  "scenario": "stable",
+  "total_cost": 19870.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 10.21,
+  "stockout_steps": 1.1,
+  "runs": 8,
+  "key": "S1 (s,S) policy|stable"
+ },
+ {
+  "system": "S2 EOQ",
+  "scenario": "seasonal",
+  "total_cost": 19864.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 6.98,
+  "stockout_steps": 0.8,
+  "runs": 8,
+  "key": "S2 EOQ|seasonal"
+ },
+ {
+  "system": "S2 EOQ",
+  "scenario": "shock",
+  "total_cost": 29215.0,
+  "fill_rate": 0.9723,
+  "e2e_bullwhip": 2.68,
+  "stockout_steps": 9.4,
+  "runs": 8,
+  "key": "S2 EOQ|shock"
+ },
+ {
+  "system": "S2 EOQ",
+  "scenario": "stable",
+  "total_cost": 20671.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 10.4,
+  "stockout_steps": 0.4,
+  "runs": 8,
+  "key": "S2 EOQ|stable"
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "scenario": "seasonal",
+  "total_cost": 21842.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 8.4,
+  "stockout_steps": 0.9,
+  "runs": 8,
+  "key": "Ref: 2c adaptive heuristic|seasonal"
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "scenario": "shock",
+  "total_cost": 35643.0,
+  "fill_rate": 0.9736,
+  "e2e_bullwhip": 3.83,
+  "stockout_steps": 6.4,
+  "runs": 8,
+  "key": "Ref: 2c adaptive heuristic|shock"
+ },
+ {
+  "system": "Ref: 2c adaptive heuristic",
+  "scenario": "stable",
+  "total_cost": 21170.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 14.19,
+  "stockout_steps": 0.6,
+  "runs": 8,
+  "key": "Ref: 2c adaptive heuristic|stable"
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "scenario": "seasonal",
+  "total_cost": 21892.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 8.43,
+  "stockout_steps": 0.9,
+  "runs": 8,
+  "key": "Ref: always-follow (S6 floor)|seasonal"
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "scenario": "shock",
+  "total_cost": 34545.0,
+  "fill_rate": 0.9738,
+  "e2e_bullwhip": 3.83,
+  "stockout_steps": 5.9,
+  "runs": 8,
+  "key": "Ref: always-follow (S6 floor)|shock"
+ },
+ {
+  "system": "Ref: always-follow (S6 floor)",
+  "scenario": "stable",
+  "total_cost": 21251.0,
+  "fill_rate": 1.0,
+  "e2e_bullwhip": 14.14,
+  "stockout_steps": 0.5,
+  "runs": 8,
+  "key": "Ref: always-follow (S6 floor)|stable"
+ }
+]

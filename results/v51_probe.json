@@ -1,0 +1,38 @@
+{
+ "glm-isoquant": {
+  "ok": true,
+  "prompt_tokens": 838,
+  "completion_tokens": 43,
+  "usd": 4.1e-05,
+  "seconds": 3.2,
+  "answer": {
+   "regime": "stable",
+   "action": "follow",
+   "rationale": "Detector confirms stable demand; inventory position healthy; follow reference clipped to safe minimum."
+  }
+ },
+ "deepseek-v4.1-flash": {
+  "ok": true,
+  "prompt_tokens": 876,
+  "completion_tokens": 310,
+  "usd": 0.000294,
+  "seconds": 5.1,
+  "answer": {
+   "regime": "stable",
+   "action": "follow",
+   "rationale": "Stable demand and high inventory position; follow reference, clipped to safe minimum."
+  }
+ },
+ "gemini-3.8-flash": {
+  "ok": true,
+  "prompt_tokens": 914,
+  "completion_tokens": 28,
+  "usd": 0.00079,
+  "seconds": 2.5,
+  "answer": {
+   "regime": "stable",
+   "action": "follow",
+   "rationale": "Demand is stable and inventory position is high; clipping makes follow optimal."
+  }
+ }
+}

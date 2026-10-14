@@ -1,0 +1,40 @@
+[
+ {
+  "system": "S3 Single LLM agent",
+  "decisions": 160,
+  "llm_calls": 160,
+  "instruction_following": 1.0,
+  "fallback_rate": 0.0,
+  "error_rate": 0.0,
+  "regime_accuracy": 0.394,
+  "follow_rate": 0.544,
+  "clip_rate": 0.475,
+  "tokens_in": 521,
+  "tokens_out": 62,
+  "usd_per_run": 0.0067,
+  "groundedness": null,
+  "latency_ms": null,
+  "tool_choice_accuracy": "n/a: tools are deterministic",
+  "parameter_accuracy": "n/a: tools are deterministic",
+  "negotiation": "n/a: no negotiation"
+ },
+ {
+  "system": "S6 Orchestrated (proposed)",
+  "decisions": 160,
+  "llm_calls": 160,
+  "instruction_following": 1.0,
+  "fallback_rate": 0.0,
+  "error_rate": 0.0,
+  "regime_accuracy": 0.738,
+  "follow_rate": 0.594,
+  "clip_rate": 0.644,
+  "tokens_in": 838,
+  "tokens_out": 85,
+  "usd_per_run": 0.0099,
+  "groundedness": null,
+  "latency_ms": null,
+  "tool_choice_accuracy": "n/a: tools are deterministic",
+  "parameter_accuracy": "n/a: tools are deterministic",
+  "negotiation": "n/a: 1 orchestrator call, 0 rounds"
+ }
+]
