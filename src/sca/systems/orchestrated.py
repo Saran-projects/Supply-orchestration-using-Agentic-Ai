@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from sca.config import get_config
 from sca.db import DuckDBManager
-from sca.llm.client import LLMClient
+from sca.llm.client import FatalAPIError, LLMClient, PaidCallsDisabledError
 from sca.sim.environment import ECHELONS, EchelonState
 from sca.systems.base import OrderingSystem, register_system
 from sca.systems.llm_base import format_history_summary, load_prompt_template
@@ -45,7 +45,7 @@ from sca.systems.multi_agent_tools import (
 from sca.tools import (
     SmoothedOrderUpToInput,
     ValidateOrderInput,
-    safe_order_range,
+    safe_order_bounds,
     smoothed_order_up_to,
     validate_order,
 )
@@ -165,6 +165,21 @@ class OrchestratorAgent:
                 "Conflict: {conflict_details}. Round: {round_num} of {max_rounds}."
             )
 
+    def safe_bounds(self, state: EchelonState, forecast: float, capacity_limit: float) -> Dict[str, Any]:
+        """Inputs and bounds shared by the prompt's Safe Order Range and validate_order."""
+        limits = {
+            "last_order": float(state.last_order),
+            "forecast_demand": float(forecast),
+            "rate_limit_delta": self.config.get("rate_limit_delta"),
+            "forecast_cap_multiple": self.config.get("forecast_cap_multiple"),
+        }
+        low, high = safe_order_bounds(
+            **limits,
+            capacity_limit=capacity_limit if self.echelon == "manufacturer" else None,
+            max_order=capacity_limit,
+        )
+        return {"limits": limits, "low": low, "high": high}
+
     def get_capacity(self) -> float:
         """Resolve capacity limit for this echelon."""
         if self.echelon == "manufacturer":
@@ -214,6 +229,7 @@ class OrchestratorAgent:
         proposals: Dict[str, AgentProposal],
         capacity_limit: float,
         state: Optional[EchelonState] = None,
+        smoothed_target: Optional[float] = None,
     ) -> ConflictDetectionResult:
         """Deterministic rule-based conflict detection.
 
@@ -270,7 +286,21 @@ class OrchestratorAgent:
             }
 
         # Rule 4: Deviation from Smoothed Target (behind config flag)
-        if self.enable_smoothed_target_conflict and state is not None:
+        if self.enable_smoothed_target_conflict and smoothed_target is not None:
+            denom_target = max(float(smoothed_target), 1.0)
+            sm_dev_agents = {
+                name: round(abs(q - smoothed_target) / denom_target, 3)
+                for name, q in quantities.items()
+                if abs(q - smoothed_target) / denom_target > self.smoothed_target_threshold
+            }
+            if sm_dev_agents:
+                triggers.append("deviation_from_smoothed_target")
+                details["deviation_from_smoothed_target"] = {
+                    "smoothed_target": round(float(smoothed_target), 2),
+                    "threshold": self.smoothed_target_threshold,
+                    "deviations": sm_dev_agents,
+                }
+        elif self.enable_smoothed_target_conflict and state is not None:
             try:
                 hist = (
                     [float(h.demand) for h in state.history_window]
@@ -342,6 +372,8 @@ class OrchestratorAgent:
         messages_exchanged = 0
         tokens_used = 0
         curr_proposals = {k: v.quantity for k, v in proposals.items()}
+        # True when the last round's LLM attempts all failed and a deterministic concession was used
+        self.last_negotiation_llm_failed = False
 
         proposals_summary = "\n".join(
             f"- {name.capitalize()}: {p.quantity:.1f} (Rationale: {p.rationale})"
@@ -390,9 +422,8 @@ class OrchestratorAgent:
                     else [round(float(state.last_order), 1)]
                 )
                 fc_val = proposals["demand"].quantity if "demand" in proposals else float(state.current_demand)
-                delta = float(self.config.get("rate_limit_delta", 0.5))
-                min_safe, max_safe = safe_order_range(float(state.last_order), float(fc_val), delta)
-                max_safe = min(capacity_limit, max_safe)
+                bounds = self.safe_bounds(state, fc_val, capacity_limit)
+                min_safe, max_safe = bounds["low"], bounds["high"]
                 safe_range_str = f"[{min_safe:.1f}, {max_safe:.1f}]"
 
                 # Format prompt for negotiation concession
@@ -417,6 +448,7 @@ class OrchestratorAgent:
                 concession_rationale = f"Adjusted order toward capacity-bounded median ({revised_qty:.1f})"
 
                 if self.llm_client is not None:
+                    self.last_negotiation_llm_failed = False
                     first_err = None
                     p_ver_str = str(self.config.get("prompt_version", "v3"))
                     try:
@@ -441,6 +473,8 @@ class OrchestratorAgent:
                                 first_err = f"Quantity {qty} out of range [0.0, {capacity_limit}]"
                         else:
                             first_err = "No structured NegotiationResponse"
+                    except (FatalAPIError, PaidCallsDisabledError):
+                        raise
                     except Exception as e:
                         first_err = str(e)
 
@@ -473,12 +507,17 @@ class OrchestratorAgent:
                                 else:
                                     revised_qty = min(capacity_limit, max(0.0, float(state.last_order)))
                                     concession_rationale = f"Fallback to last order {revised_qty:.1f}"
+                                    self.last_negotiation_llm_failed = True
                             else:
                                 revised_qty = min(capacity_limit, max(0.0, float(state.last_order)))
                                 concession_rationale = f"Fallback to last order {revised_qty:.1f}"
+                                self.last_negotiation_llm_failed = True
+                        except (FatalAPIError, PaidCallsDisabledError):
+                            raise
                         except Exception:
                             revised_qty = min(capacity_limit, max(0.0, float(state.last_order)))
                             concession_rationale = f"Fallback to last order {revised_qty:.1f}"
+                            self.last_negotiation_llm_failed = True
 
                 # Log Agent concession message
                 agent_msg_id = f"msg_{uuid.uuid4().hex[:8]}"
@@ -570,6 +609,19 @@ class OrchestratedSystem(OrderingSystem):
         # Scripted Failure Flags for Testing
         self.force_validation_failure: bool = self.config.get("force_validation_failure", False)
 
+        # Tool target = the System 2c tool chain (same code path and parameters as 2c).
+        # "negotiation" (default) keeps the agent/LLM pipeline; "tool_target" orders the target directly.
+        self.order_source: str = self.config.get("order_source", "negotiation")
+        if self.order_source not in ("negotiation", "tool_target"):
+            raise ValueError(f"Invalid order_source '{self.order_source}'. Must be 'negotiation' or 'tool_target'.")
+        from sca.baselines.smoothed_out import System2cPolicy, load_frozen_2c_params
+
+        target_params = self.config.get("target_policy_params")
+        if target_params is None:
+            target_params = load_frozen_2c_params()
+        self.target_params: Dict[str, Any] = {**target_params, "db_path": False}
+        self.target_policy = System2cPolicy(name="s6_tool_target", config=self.target_params)
+
         # Initialize OrchestratorAgent per echelon
         self.orchestrators: Dict[str, OrchestratorAgent] = {
             ech: OrchestratorAgent(echelon=ech, config=self.config, llm_client=self.llm_client)
@@ -579,9 +631,23 @@ class OrchestratedSystem(OrderingSystem):
         self.decision_history: List[OrchestratedDecisionRecord] = []
         self.total_fallbacks: int = 0
 
+    def calibrate(self, scenario: Any, config: Optional[Dict[str, Any]] = None) -> None:
+        """Calibrate the tool-target policy on scenario training data."""
+        self.target_policy.calibrate(scenario, config=self.target_params)
+        self.calibrated = True
+
+    def reset(self, scenario: Optional[Any] = None) -> None:
+        """Reset per-run state, including the tool-target policy."""
+        self.target_policy.reset(scenario)
+        self.decision_history = []
+        self.total_fallbacks = 0
+
     def decide_orders(self, states: Dict[str, EchelonState]) -> Dict[str, float]:
         """Orchestrate ordering decisions across all echelons."""
         orders: Dict[str, float] = {}
+        # 2c tool chain needs every echelon's state; partial states (unit tests) get no target
+        target_last_orders = dict(self.target_policy.last_orders)
+        targets = self.target_policy.decide_orders(states) if all(e in states for e in ECHELONS) else {}
 
         for echelon in ECHELONS:
             if echelon not in states:
@@ -606,7 +672,9 @@ class OrchestratedSystem(OrderingSystem):
             prop_qtys = {k: v.quantity for k, v in proposals.items()}
 
             # 3. Detect Conflicts via Deterministic Rules
-            conflict = orch.detect_conflicts(proposals, capacity_limit, state=state)
+            conflict = orch.detect_conflicts(
+                proposals, capacity_limit, state=state, smoothed_target=targets.get(echelon)
+            )
 
             # 4. Resolve Conflict vs Apply Shortcut
             rounds_used = 0
@@ -615,8 +683,12 @@ class OrchestratedSystem(OrderingSystem):
 
             # Determine whether to skip negotiation
             skip_negotiation = (not conflict.has_conflict) if self.enable_conflict_skip else False
+            orch.last_negotiation_llm_failed = False
 
-            if skip_negotiation:
+            if self.order_source == "tool_target":
+                raw_order = float(targets[echelon])
+                resolution_method = "tool_target"
+            elif skip_negotiation:
                 # No-conflict shortcut: Zero LLM negotiation calls
                 raw_order = float(np.median(list(prop_qtys.values())))
                 resolution_method = "no_conflict_consensus"
@@ -646,6 +718,16 @@ class OrchestratedSystem(OrderingSystem):
                 # Optional testing hook to trigger validation failure
                 proposed_val = 999999.0 if self.force_validation_failure else raw_order
 
+                # Same inputs as the prompt's Safe Order Range (shared safe_order_bounds)
+                if self.order_source == "tool_target":
+                    fc_ref = float(self.target_policy.smoothed_demands.get(echelon, state.current_demand))
+                else:
+                    fc_ref = proposals["demand"].quantity if "demand" in proposals else float(state.current_demand)
+                limits = orch.safe_bounds(state, fc_ref, capacity_limit)["limits"]
+                if self.order_source == "tool_target":
+                    # Validate against the same last-order reference the 2c tool chain used
+                    limits["last_order"] = float(target_last_orders.get(echelon, state.last_order))
+
                 try:
                     val_out = validate_order(
                         ValidateOrderInput(
@@ -654,6 +736,7 @@ class OrchestratedSystem(OrderingSystem):
                             min_order=0.0,
                             max_order=capacity_limit,
                             capacity_limit=capacity_limit if echelon == "manufacturer" else None,
+                            **limits,
                         ),
                         db_path=self.db_path,
                         run_id=self.run_id,
@@ -664,13 +747,14 @@ class OrchestratedSystem(OrderingSystem):
                         is_parameter_valid=True,
                     )
 
-                    if val_out.is_valid and not self.force_validation_failure:
-                        final_order = float(val_out.validated_order)
-                    else:
+                    if self.force_validation_failure and not val_out.is_valid:
                         # Validation rejected: Deterministic fallback to state.last_order
                         final_order = min(capacity_limit, max(0.0, float(state.last_order)))
                         fallback_used = True
                         self.total_fallbacks += 1
+                    else:
+                        # validate_order clips into the safe bounds; apply the clipped order (as System 2c does)
+                        final_order = float(val_out.validated_order)
                 except Exception as e:
                     logger.warning("[%s] Order validation error: %s. Applying fallback.", echelon, e)
                     final_order = min(capacity_limit, max(0.0, float(state.last_order)))
@@ -680,7 +764,13 @@ class OrchestratedSystem(OrderingSystem):
                 # Ablation: Validation turned off (order applied unvalidated)
                 final_order = raw_order
 
+            if orch.last_negotiation_llm_failed and not fallback_used:
+                # LLM failed in negotiation; the order came from a deterministic concession
+                fallback_used = True
+                self.total_fallbacks += 1
+
             orders[echelon] = final_order
+            self.target_policy.last_orders[echelon] = final_order
             elapsed_ms = (time.time() - start_t) * 1000.0
 
             # 6. Telemetry Logging to DuckDB
@@ -709,6 +799,8 @@ class OrchestratedSystem(OrderingSystem):
 
     def _log_decision_to_duckdb(self, record: OrchestratedDecisionRecord) -> None:
         """Write decision metrics and summary to DuckDB tables."""
+        if self.db_path is False:
+            return
         try:
             with DuckDBManager(self.db_path) as db:
                 db.log_orchestrated_decision(

@@ -103,3 +103,26 @@ To directly address the excessive output token volume (5,662 tokens/decision on 
 ### 3. Result
 *(To be recorded following run execution)*
 
+
+---
+
+## Bug fix 2026-10-14 (not a tuning iteration; see protocol Amendment A1)
+
+- `configs/models.yaml`: `glm-isoquant` `max_tokens` 256 -> 1024. At 256, every v4.1 call was truncated by hidden reasoning
+  tokens and returned empty content (`docs/diagnosis_phase5.md`, section 1). No prompt, design or tuned parameter changed.
+  Applies to the first paid design-v5 run (shock, seed 102).
+
+## Bug fix 2026-10-14 (second; not a tuning iteration)
+
+- `configs/models.yaml`: `glm-isoquant` `max_tokens` 1024 -> 2048. The first v5 run (shock, seed 102) was invalid:
+  31/160 System 3 decisions hit `finish_reason=length` at 1024 tokens (hidden reasoning averaged 675 output tokens/decision).
+  No prompt, design or tuned parameter changed. The run is repeated as the same step.
+
+## Bug fix 2026-10-14 (third; not a tuning iteration)
+
+- `configs/models.yaml`, `glm-isoquant`: removed `reasoning_tokens: "disabled"`, added `reasoning_effort: "low"`,
+  `max_tokens` 2048 -> 1024. Provider docs: glm-5.3-flash uses forced thinking; `thinking.type` only supports `enabled`
+  (https://docs.z.ai/guides/vlm/glm-5.3-flash), so the old flag was ignored and both v5 runs truncated (31 and 13
+  fallbacks). One test call on a real v5 System 3 prompt with `reasoning_effort: low`: valid on first pass, 49 output
+  tokens. This implements the config's stated intent (limit reasoning); prompts, design and tuned parameters unchanged.
+  Caveat: lower reasoning effort may also change decision quality.

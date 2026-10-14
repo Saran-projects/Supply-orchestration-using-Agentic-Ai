@@ -249,6 +249,8 @@ class ExperimentConfig(BaseModel):
         default_factory=lambda: {"max_workers_non_llm": 8, "max_workers_llm": 2}
     )
     metrics: List[str] = Field(default_factory=list)
+    # A run is invalid (and the batch halts) if more than this share of decisions used the fallback order
+    max_fallback_rate: float = Field(default=0.05, ge=0.0, le=1.0)
     constraints: ConstraintsConfig = Field(default_factory=ConstraintsConfig)
 
     @field_validator("db_path", "output_dir", mode="before")
@@ -306,6 +308,10 @@ class ModelEntryConfig(BaseModel):
     reasoning_tokens: Optional[Union[int, str, bool]] = Field(
         default=None,
         description="Optional parameter to limit or disable reasoning tokens (e.g. 'disabled', 0, False, or max count)",
+    )
+    extra_body: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Provider-specific request fields sent as-is (e.g. OpenRouter 'reasoning' and 'provider' routing)",
     )
     reasoning_effort: Optional[str] = Field(
         default=None,
@@ -453,6 +459,82 @@ def load_models_config(configs_dir: Optional[Path | str] = None) -> ModelsConfig
     c_dir = resolve_configs_dir(configs_dir)
     data = load_yaml_file(c_dir / "models.yaml")
     return ModelsConfig.model_validate(data)
+
+
+class AgentV5ReferenceConfig(BaseModel):
+    window: int = Field(default=5, ge=1)
+    horizon: float = Field(default=4.0, gt=0.0)
+
+
+class AgentV5DetectorConfig(BaseModel):
+    short_window: int = Field(default=5, gt=0)
+    long_window: int = Field(default=15, gt=0)
+    shock_threshold: float = Field(default=1.30, ge=1.0)
+    trend_threshold: float = Field(default=1.15, ge=1.0)
+    shock_duration: int = Field(default=4, ge=1)
+    after_shock_steps: int = Field(default=4, ge=0)
+
+
+class AgentV5BandConfig(BaseModel):
+    delta: float = Field(default=0.8, ge=0.0)
+    delta_shock: float = Field(default=0.8, ge=0.0)
+    forecast_cap_multiple: float = Field(default=1.2, ge=1.0)
+
+
+class AgentV5LimitsConfig(BaseModel):
+    max_order: float = Field(default=500.0, gt=0.0)
+    manufacturer_capacity: float = Field(default=300.0, gt=0.0)
+
+
+class AgentV5LlmToolsConfig(BaseModel):
+    prompt_version: str = Field(default="v5.1")
+    required: List[str] = Field(default_factory=lambda: ["regime_detector", "smoothed_order_up_to"])
+    allowed: List[str] = Field(default_factory=lambda: ["forecast_demand"])
+    param_tolerance_abs: float = Field(default=0.5, ge=0.0)
+    param_tolerance_rel: float = Field(default=0.01, ge=0.0)
+    max_calls: int = Field(default=5, ge=1)
+
+
+class AgentV5NegotiationConfig(BaseModel):
+    max_rounds: int = Field(default=2, ge=1, le=2)
+    objection_threshold: float = Field(default=0.15, ge=0.0)
+
+
+class AgentV5Config(BaseModel):
+    """Agent design v5 (configs/agent_v5.yaml): action space, reference, detector and band."""
+
+    prompt_version: str = Field(default="v5.0")
+    multipliers: Dict[str, float] = Field(
+        default_factory=lambda: {"follow": 1.0, "boost_small": 1.15, "boost_large": 1.4, "trim": 0.85}
+    )
+    multipliers_frozen: bool = Field(default=False)
+    multipliers_tuning_log: Optional[str] = Field(default=None)
+    reference: AgentV5ReferenceConfig = Field(default_factory=AgentV5ReferenceConfig)
+    detector: AgentV5DetectorConfig = Field(default_factory=AgentV5DetectorConfig)
+    band: AgentV5BandConfig = Field(default_factory=AgentV5BandConfig)
+    limits: AgentV5LimitsConfig = Field(default_factory=AgentV5LimitsConfig)
+    tool_params_path: str = Field(default="results/baselines_frozen.json")
+    tool_mode: str = Field(default="deterministic", pattern="^(deterministic|llm_tools)$")
+    llm_tools: AgentV5LlmToolsConfig = Field(default_factory=AgentV5LlmToolsConfig)
+    negotiation: AgentV5NegotiationConfig = Field(default_factory=AgentV5NegotiationConfig)
+
+    @field_validator("multipliers")
+    @classmethod
+    def _all_actions(cls, v: Dict[str, float]) -> Dict[str, float]:
+        required = {"follow", "boost_small", "boost_large", "trim"}
+        if set(v) != required:
+            raise ValueError(f"multipliers must define exactly {sorted(required)}")
+        if any(m <= 0 for m in v.values()):
+            raise ValueError("multipliers must be positive")
+        return {k: float(m) for k, m in v.items()}
+
+
+def load_agent_v5_config(configs_dir: Optional[Path | str] = None) -> AgentV5Config:
+    """Load and validate AgentV5Config from agent_v5.yaml (defaults if the file is missing)."""
+    c_dir = resolve_configs_dir(configs_dir)
+    path = c_dir / "agent_v5.yaml"
+    data = load_yaml_file(path) if path.is_file() else {}
+    return AgentV5Config.model_validate(data)
 
 
 @lru_cache(maxsize=1)

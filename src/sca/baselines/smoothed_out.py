@@ -9,7 +9,9 @@ Implements an adaptive order-up-to replenishment policy without LLM calls:
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
@@ -274,6 +276,15 @@ class SmoothedOrderUpToPolicy(OrderingSystem):
             orders[e] = final_order
 
         return orders
+
+
+def load_frozen_2c_params(path: str | Path = "results/baselines_frozen.json") -> Dict[str, Any]:
+    """Tuned System 2c parameters from the frozen baselines file ({} if unavailable)."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return dict(json.load(f)["tuned_policies"]["system_2c_adaptive_smoothed_out"]["parameters"])
+    except (OSError, KeyError, ValueError):
+        return {}
 
 
 @register_system([

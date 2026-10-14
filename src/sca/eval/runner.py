@@ -41,6 +41,8 @@ from sca.eval.manifest import (
     compute_benchmark_config_hash,
     verify_config_matches_manifest,
 )
+from sca.eval.validity import DEFAULT_MAX_FALLBACK_RATE, BatchHaltedError, check_run_validity
+from sca.llm.client import FatalAPIError, PaidCallsDisabledError
 from sca.sim.environment import ECHELONS, BeerGameEnv
 from sca.sim.metrics import SimulationMetrics, compute_simulation_metrics
 from sca.systems.base import SYSTEM_REGISTRY, OrderingSystem, get_system, list_systems
@@ -77,7 +79,7 @@ class RunResult:
     """Collected outputs and metrics from a completed simulation run."""
 
     spec: RunSpec
-    status: str  # "completed" | "failed"
+    status: str  # "completed" | "failed" | "invalid" | "aborted"
     experiment_name: str
     error: Optional[str] = None
     execution_time_sec: float = 0.0
@@ -94,6 +96,7 @@ def run_single_simulation(
     scenario: Scenario,
     sim_config_dict: Dict[str, Any],
     experiment_name: str,
+    max_fallback_rate: float = DEFAULT_MAX_FALLBACK_RATE,
 ) -> RunResult:
     """Execute a single simulation run in worker process/thread.
 
@@ -160,7 +163,13 @@ def run_single_simulation(
             }
             steps_data.append(step_record)
 
-        # 4. Conservation check and metric calculation
+        # 4. Run-validity rules for LLM systems (fallback rate, LLM calls vs decisions)
+        invalid_reason = None
+        llm_stats = system.llm_stats() if hasattr(system, "llm_stats") else None
+        if llm_stats is not None:
+            invalid_reason = check_run_validity(llm_stats, max_fallback_rate)
+
+        # Conservation check and metric calculation
         env.check_unit_conservation()
         sim_metrics: SimulationMetrics = compute_simulation_metrics(env)
 
@@ -241,6 +250,11 @@ def run_single_simulation(
             "elapsed_sec": round(elapsed, 4),
             **summary,
         }
+        if llm_stats is not None:
+            meta["llm_stats"] = llm_stats
+        if invalid_reason:
+            meta["invalid_reason"] = invalid_reason
+            logger.error("Run '%s' marked INVALID: %s", spec.run_id, invalid_reason)
 
         config_dict = {
             "system": system.get_parameters(),
@@ -250,7 +264,8 @@ def run_single_simulation(
 
         return RunResult(
             spec=spec,
-            status="completed",
+            status="invalid" if invalid_reason else "completed",
+            error=invalid_reason,
             experiment_name=experiment_name,
             execution_time_sec=elapsed,
             summary_metrics=summary,
@@ -259,6 +274,23 @@ def run_single_simulation(
             system_parameters=system.get_parameters(),
             config_dict=config_dict,
             metadata=meta,
+        )
+
+    except (FatalAPIError, PaidCallsDisabledError) as exc:
+        elapsed = time.time() - start_time
+        logger.error("Aborted run '%s' (no retry, no fallback): %s", spec.run_id, exc)
+        return RunResult(
+            spec=spec,
+            status="aborted",
+            experiment_name=experiment_name,
+            error=str(exc),
+            execution_time_sec=elapsed,
+            metadata={
+                "system_id": spec.system_id,
+                "scenario": spec.scenario_name,
+                "seed": spec.seed,
+                "error": str(exc),
+            },
         )
 
     except Exception as exc:
@@ -641,6 +673,7 @@ class EvaluationRunner:
                             scenarios[spec.scenario_name],
                             sim_config_dict,
                             exp_name,
+                            self.exp_cfg.max_fallback_rate,
                         ): spec
                         for spec in llm_specs
                     }
@@ -652,6 +685,11 @@ class EvaluationRunner:
                             res = future.result()
                             self.persist_result(res, db_mgr)
                             results.append(res)
+                            if res.status in ("invalid", "aborted"):
+                                llm_executor.shutdown(wait=False, cancel_futures=True)
+                                raise BatchHaltedError(
+                                    f"Batch halted: run '{spec.run_id}' {res.status}: {res.error}"
+                                )
                             logger.info(
                                 "[%d/%d] Completed LLM %s on %s (seed=%d)",
                                 finished_count,
@@ -660,6 +698,8 @@ class EvaluationRunner:
                                 spec.scenario_name,
                                 spec.seed,
                             )
+                        except BatchHaltedError:
+                            raise
                         except Exception as e:
                             logger.error("LLM worker failed for run '%s': %s", spec.run_id, e)
 

@@ -19,12 +19,13 @@ models:
     base_url: "https://api.isoquant.ai/v1"
     api_key_env: "ISOQUANT_API_KEY"
     temperature: 0.2
-    max_tokens: 256
+    max_tokens: 1024
     timeout_s: 60.0
     price_per_1k_input: 0.000027 # confirmed rate ($0.027 / 1M tokens)
     price_per_1k_cached_input: 0.000018 # confirmed rate ($0.018 / 1M tokens)
     price_per_1k_output: 0.00049 # confirmed rate ($0.49 / 1M tokens)
-    reasoning_tokens: "disabled" # optional setting to disable/limit reasoning tokens
+    # glm-5.3-flash always thinks; thinking.type "disabled" is ignored upstream. Lowest supported effort instead.
+    reasoning_effort: "low"
     supports_json_schema: true
     enabled: true
     max_concurrency: 10
@@ -72,6 +73,42 @@ models:
     supports_json_schema: true
     enabled: false
     max_concurrency: 10
+    requests_per_minute: 60
+
+  # OpenRouter models for the design v5.1 model comparison (protocol Amendment A2).
+  # Prices from the public catalogue https://openrouter.ai/api/v1/models, read 2026-10-14.
+  - name: "deepseek-v4.1-flash"
+    provider: "openai_compatible"
+    model_id: "deepseek/deepseek-v4.1-flash"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    temperature: 0.2
+    max_tokens: 1024
+    timeout_s: 60.0
+    price_per_1k_input: 0.00002   # $0.020 / 1M
+    price_per_1k_cached_input: 0.00002
+    price_per_1k_output: 0.000891 # $0.891 / 1M
+    extra_body: {"reasoning": {"effort": "low"}, "provider": {"require_parameters": true}}
+    supports_json_schema: true
+    enabled: true
+    max_concurrency: 4
+    requests_per_minute: 60
+
+  - name: "gemini-3.8-flash"
+    provider: "openai_compatible"
+    model_id: "google/gemini-3.8-flash"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    temperature: 0.2
+    max_tokens: 1024
+    timeout_s: 60.0
+    price_per_1k_input: 0.00075   # $0.75 / 1M
+    price_per_1k_cached_input: 0.00075
+    price_per_1k_output: 0.00375  # $3.75 / 1M
+    extra_body: {"reasoning": {"effort": "low"}, "provider": {"require_parameters": true}}
+    supports_json_schema: true
+    enabled: true
+    max_concurrency: 4
     requests_per_minute: 60
 
   - name: "mock"

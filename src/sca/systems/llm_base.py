@@ -14,10 +14,17 @@ from pydantic import BaseModel, Field, model_validator
 
 from sca.config import get_config
 from sca.db import get_duckdb_connection
-from sca.llm.client import LLMClient, StructuredOutputError, calculate_cost
+from sca.llm.client import (
+    FatalAPIError,
+    LLMClient,
+    PaidCallsDisabledError,
+    StructuredOutputError,
+    TruncatedOutputError,
+    calculate_cost,
+)
 from sca.sim.environment import ECHELONS, EchelonHistoryRecord, EchelonState
 from sca.systems.base import OrderingSystem
-from sca.tools import safe_order_range
+from sca.tools import safe_order_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -146,9 +153,24 @@ class LLMOrderingSystemBase(OrderingSystem):
         else:
             self.log_to_db = True
 
+        self.decision_count = 0
+        self.fallback_count = 0
+        self.llm_call_count = 0
+
+    def llm_stats(self) -> Dict[str, int]:
+        """Per-run counts used by the run-validity check."""
+        return {
+            "decisions": self.decision_count,
+            "fallbacks": self.fallback_count,
+            "llm_calls": self.llm_call_count,
+        }
+
     def reset(self, scenario: Optional[Any] = None) -> None:
         """Reset internal system state at the start of a simulation run."""
         self.calibrated = True
+        self.decision_count = 0
+        self.fallback_count = 0
+        self.llm_call_count = 0
         if hasattr(self.llm_client, "mock") and hasattr(self.llm_client.mock, "set_seed"):
             seed_to_use = self.seed if self.seed is not None else 42
             self.llm_client.mock.set_seed(seed_to_use)
@@ -251,9 +273,14 @@ class LLMOrderingSystemBase(OrderingSystem):
 
         # 5. Safe range & recommendation
         cap = self.get_max_order(echelon)
-        delta = float(self.config.get("rate_limit_delta", 0.5))
-        min_safe, max_safe = safe_order_range(float(state.last_order), float(pt_forecast), delta)
-        max_safe = min(cap, max_safe)
+        # Same bounds validate_order enforces for these inputs (shared function)
+        min_safe, max_safe = safe_order_bounds(
+            last_order=float(state.last_order),
+            forecast_demand=float(pt_forecast),
+            rate_limit_delta=self.config.get("rate_limit_delta"),
+            forecast_cap_multiple=self.config.get("forecast_cap_multiple"),
+            max_order=cap,
+        )
 
         rec_target = min(cap, max(min_safe, smoothed_target))
 
@@ -306,6 +333,7 @@ class LLMOrderingSystemBase(OrderingSystem):
                 run_id=self.run_id,
                 log_to_db=False,
             )
+            self.llm_call_count += 1
             total_p_tok += first_resp.prompt_tokens
             total_c_tok += first_resp.completion_tokens
             total_cached_tok += getattr(first_resp, "cached_tokens", 0)
@@ -323,13 +351,30 @@ class LLMOrderingSystemBase(OrderingSystem):
             else:
                 need_retry = True
                 first_attempt_err = "No structured OrderDecision returned"
+        except (FatalAPIError, PaidCallsDisabledError):
+            # Auth/billing failure or paid-call guard: stop the run, no retry, no fallback order
+            raise
+        except TruncatedOutputError as exc:
+            # Token limit / empty output: a retry with the same max_tokens cannot succeed
+            self.llm_call_count += 1
+            need_retry = False
+            fallback = True
+            error_type = "TruncatedOutputError"
+            first_attempt_err = str(exc)
+            total_p_tok += exc.prompt_tokens
+            total_c_tok += exc.completion_tokens
+            total_cached_tok += exc.cached_tokens
         except StructuredOutputError as exc:
             # LLMClient already attempted validation and internal retry failed
+            self.llm_call_count += 1
             need_retry = False
             fallback = True
             retry_count = 1
             error_type = "StructuredOutputError"
             first_attempt_err = str(exc)
+            total_p_tok += exc.prompt_tokens
+            total_c_tok += exc.completion_tokens
+            total_cached_tok += exc.cached_tokens
         except Exception as exc:
             # Other error on attempt 1 (e.g. malformed or adapter failure)
             need_retry = True
@@ -357,6 +402,7 @@ class LLMOrderingSystemBase(OrderingSystem):
                     run_id=self.run_id,
                     log_to_db=False,
                 )
+                self.llm_call_count += 1
                 total_p_tok += retry_resp.prompt_tokens
                 total_c_tok += retry_resp.completion_tokens
                 total_cached_tok += getattr(retry_resp, "cached_tokens", 0)
@@ -375,6 +421,8 @@ class LLMOrderingSystemBase(OrderingSystem):
                     fallback = True
                     error_type = "StructuredOutputError"
                     reasoning = "Fallback: retry did not yield structured OrderDecision"
+            except (FatalAPIError, PaidCallsDisabledError):
+                raise
             except Exception as exc:
                 fallback = True
                 error_type = type(exc).__name__
@@ -383,7 +431,9 @@ class LLMOrderingSystemBase(OrderingSystem):
         # -------------------------------------------------------------
         # 3. Fallback to last order if failed
         # -------------------------------------------------------------
+        self.decision_count += 1
         if fallback:
+            self.fallback_count += 1
             last_ord = float(state.last_order) if hasattr(state, "last_order") else 0.0
             final_order = max(0.0, min(max_order, last_ord))
             if not reasoning:

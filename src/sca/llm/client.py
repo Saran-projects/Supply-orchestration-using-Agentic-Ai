@@ -52,7 +52,98 @@ T = TypeVar("T", bound=BaseModel)
 class StructuredOutputError(Exception):
     """Raised when LLM output fails validation against expected Pydantic schema after retries."""
 
-    pass
+    def __init__(self, message: str = "", prompt_tokens: int = 0, completion_tokens: int = 0, cached_tokens: int = 0):
+        super().__init__(message)
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.cached_tokens = cached_tokens
+
+
+class TruncatedOutputError(RuntimeError):
+    """Raised when the provider stops on the token limit or returns empty content.
+
+    Retrying with the same max_tokens cannot succeed, so this is never retried. Token counts are
+    kept so the cost of the failed call is still recorded.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        finish_reason: Optional[str] = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cached_tokens: int = 0,
+    ):
+        super().__init__(message)
+        self.finish_reason = finish_reason
+        self.prompt_tokens = prompt_tokens
+        self.completion_tokens = completion_tokens
+        self.cached_tokens = cached_tokens
+
+
+def _usage_counts(usage: Any) -> Tuple[int, int, int]:
+    """(prompt, completion, cached) token counts from an OpenAI-style usage object."""
+    if not usage:
+        return 0, 0, 0
+    cached_details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(cached_details, "cached_tokens", 0) if cached_details else 0
+    return int(usage.prompt_tokens or 0), int(usage.completion_tokens or 0), int(cached or 0)
+
+
+def check_completion(res: Any, model: str) -> Tuple[str, int, int, int]:
+    """Return (content, prompt, completion, cached) or raise TruncatedOutputError on length/empty output."""
+    choice = res.choices[0]
+    content = choice.message.content or ""
+    p_tok, c_tok, cached_tok = _usage_counts(getattr(res, "usage", None))
+    finish_reason = getattr(choice, "finish_reason", None)
+    if finish_reason == "length" or not content.strip():
+        kind = "truncated" if finish_reason == "length" else "empty"
+        raise TruncatedOutputError(
+            f"Model '{model}' returned {kind} output (finish_reason={finish_reason}, "
+            f"completion_tokens={c_tok}); raise max_tokens or reduce reasoning.",
+            finish_reason=finish_reason,
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            cached_tokens=cached_tok,
+        )
+    return content, p_tok, c_tok, cached_tok
+
+
+class PaidCallsDisabledError(RuntimeError):
+    """Raised when a real (billable) network call is attempted without ALLOW_PAID_CALLS=1."""
+
+
+class FatalAPIError(RuntimeError):
+    """Raised on HTTP 401/402/403: the run must stop immediately, with no retry and no fallback."""
+
+    def __init__(self, message: str, status_code: Optional[int] = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+PAID_CALLS_ENV_VAR = "ALLOW_PAID_CALLS"
+FATAL_STATUS_CODES = (401, 402, 403)
+
+
+def paid_calls_allowed() -> bool:
+    """Real network calls are allowed only when ALLOW_PAID_CALLS=1 is set (default: not set)."""
+    return os.environ.get(PAID_CALLS_ENV_VAR, "").strip() == "1"
+
+
+def get_status_code(exc: Exception) -> Optional[int]:
+    """Extract an HTTP status code from provider SDK exceptions, if present."""
+    for attr in ("status_code", "code", "status"):
+        val = getattr(exc, attr, None)
+        if isinstance(val, int):
+            return val
+    response = getattr(exc, "response", None)
+    val = getattr(response, "status_code", None)
+    return val if isinstance(val, int) else None
+
+
+def is_fatal_api_error(exc: Exception) -> bool:
+    """True for auth/billing failures (HTTP 401, 402, 403) that must never be retried."""
+    return isinstance(exc, FatalAPIError) or get_status_code(exc) in FATAL_STATUS_CODES
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +268,8 @@ def clean_code_fences(content: str) -> str:
 
 def is_retryable_error(exc: Exception) -> bool:
     """Determine if an exception represents a 429, 5xx, or network timeout."""
+    if is_fatal_api_error(exc) or isinstance(exc, (PaidCallsDisabledError, TruncatedOutputError)):
+        return False
     status_code = getattr(exc, "status_code", None)
     if status_code in (429, 500, 502, 503, 504):
         return True
@@ -561,6 +654,8 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
 
         if getattr(self.entry, "reasoning_effort", None) is not None:
             call_kwargs["reasoning_effort"] = self.entry.reasoning_effort
+        if getattr(self.entry, "extra_body", None):
+            call_kwargs.setdefault("extra_body", {}).update(self.entry.extra_body)
 
         # Backoff retry loop for 429/5xx/timeouts
         for attempt in range(retries + 1):
@@ -571,34 +666,22 @@ class OpenAICompatibleAdapter(BaseLLMAdapter):
                             response_format=response_model,
                             **call_kwargs,
                         )
-                        content = res.choices[0].message.content or ""
-                        usage = res.usage
-                        p_tok = usage.prompt_tokens if usage else 0
-                        c_tok = usage.completion_tokens if usage else 0
-                        cached_details = getattr(usage, "prompt_tokens_details", None)
-                        cached_tok = getattr(cached_details, "cached_tokens", 0) if cached_details else 0
-                        return content, p_tok, c_tok, cached_tok
+                        return check_completion(res, target_model)
+                    except TruncatedOutputError:
+                        raise
                     except Exception as parse_err:
-                        if is_retryable_error(parse_err):
+                        if is_retryable_error(parse_err) or is_fatal_api_error(parse_err):
                             raise parse_err
+                        completion = getattr(parse_err, "completion", None)
+                        if completion is not None:
+                            # Length/content-filter stop: re-sending without response_format hits the same limit
+                            return check_completion(completion, target_model)
                         # Fallback to standard chat completions
                         res = self.client.chat.completions.create(**call_kwargs)
-                        content = res.choices[0].message.content or ""
-                        usage = res.usage
-                        p_tok = usage.prompt_tokens if usage else 0
-                        c_tok = usage.completion_tokens if usage else 0
-                        cached_details = getattr(usage, "prompt_tokens_details", None)
-                        cached_tok = getattr(cached_details, "cached_tokens", 0) if cached_details else 0
-                        return content, p_tok, c_tok, cached_tok
+                        return check_completion(res, target_model)
                 else:
                     res = self.client.chat.completions.create(**call_kwargs)
-                    content = res.choices[0].message.content or ""
-                    usage = res.usage
-                    p_tok = usage.prompt_tokens if usage else 0
-                    c_tok = usage.completion_tokens if usage else 0
-                    cached_details = getattr(usage, "prompt_tokens_details", None)
-                    cached_tok = getattr(cached_details, "cached_tokens", 0) if cached_details else 0
-                    return content, p_tok, c_tok, cached_tok
+                    return check_completion(res, target_model)
 
             except Exception as exc:
                 if attempt >= retries or not is_retryable_error(exc):
@@ -948,6 +1031,10 @@ class MockLLM(BaseLLMAdapter):
         self.scripted_max_order: float = 300.0
         self._scripted_rng: Optional[random.Random] = None
 
+        # Design v5 (ActionDecision) modes: valid | malformed | bad_action | always_follow | detector_copy
+        self.v5_mode: Optional[str] = None
+        self._v5_rng: random.Random = random.Random(42)
+
     def configure_scripted_policy(
         self,
         enabled: bool = True,
@@ -972,6 +1059,49 @@ class MockLLM(BaseLLMAdapter):
         """Set deterministic RNG seed for scripted policy."""
         self.scripted_seed = seed
         self._scripted_rng = random.Random(seed)
+        self._v5_rng = random.Random(seed)
+
+    V5_MODES = ("valid", "malformed", "bad_action", "always_follow", "detector_copy")
+
+    def configure_v5_mode(self, mode: Optional[str], seed: int = 42) -> None:
+        """Answer design-v5 ActionDecision requests in one of V5_MODES (None turns it off)."""
+        if mode is not None and mode not in self.V5_MODES:
+            raise ValueError(f"Unknown v5 mock mode '{mode}'. Must be one of {self.V5_MODES}.")
+        self.v5_mode = mode
+        self._v5_rng = random.Random(seed)
+
+    def _v5_tool_content(self, mock_context: Optional[Dict[str, Any]]) -> str:
+        """Design v5.1 tool request: correct tools and inputs, except in the failure modes."""
+        ctx = mock_context or {}
+        truth = ctx.get("truth", {})
+        if self.v5_mode == "malformed":
+            return '{"calls": [{"tool": "regime_detector", "args": '
+        if self.v5_mode == "bad_action":
+            wrong = {k: (None if k == "demand_history" else 0.0) for k in
+                     ("demand_history", "current_demand", "inventory", "pipeline", "backlog", "last_order")}
+            return json.dumps({"calls": [{"tool": "eoq_quantity", "args": {**wrong, "demand_history": [1.0]}}]})
+        args = {k: truth.get(k) for k in
+                ("demand_history", "current_demand", "inventory", "pipeline", "backlog", "last_order")}
+        return json.dumps({"calls": [{"tool": t, "args": args} for t in ctx.get("required", [])]})
+
+    def _v5_content(self, mock_context: Optional[Dict[str, Any]]) -> str:
+        rng = self._v5_rng
+        regimes = ("stable", "trend", "shock")
+        actions = ("follow", "boost_small", "boost_large", "trim")
+        if self.v5_mode == "malformed":
+            return '{"regime": "stable", "action": "follow", "rationale": "unterminated'
+        if self.v5_mode == "bad_action":
+            return json.dumps({"regime": "stable", "action": "order_more", "rationale": "Invalid action label."})
+        if self.v5_mode == "always_follow":
+            return json.dumps({"regime": "stable", "action": "follow", "rationale": "Demand looks steady."})
+        if self.v5_mode == "detector_copy":
+            ctx = mock_context or {}
+            phase = ctx.get("detector_phase", "stable")
+            action = {"stable": "follow", "trend": "boost_small", "shock": "boost_large", "after_shock": "trim"}[phase]
+            return json.dumps({"regime": ctx.get("detector_regime", "stable"), "action": action,
+                               "rationale": f"Copied detector phase {phase}."})
+        return json.dumps({"regime": rng.choice(regimes), "action": rng.choice(actions),
+                           "rationale": "Mock valid decision."})
 
     def set_response(self, prompt_substring: str, response: Union[str, BaseModel, Dict[str, Any]]) -> None:
         """Register canned response triggered when prompt contains the substring."""
@@ -1000,6 +1130,7 @@ class MockLLM(BaseLLMAdapter):
         self.failure_rate_malformed = 0.0
         self.failure_rate_out_of_range = 0.0
         self._scripted_rng = None
+        self.v5_mode = None
 
     def _synthesize_mock_model(self, model_cls: Type[BaseModel]) -> BaseModel:
         """Synthesize a valid mock instance of any Pydantic model for structured tests."""
@@ -1079,6 +1210,10 @@ class MockLLM(BaseLLMAdapter):
                 content = json.dumps(matched_resp)
             else:
                 content = str(matched_resp)
+        elif self.v5_mode is not None and response_model is not None and response_model.__name__ == "ActionDecision":
+            content = self._v5_content(kwargs.get("mock_context"))
+        elif self.v5_mode is not None and response_model is not None and response_model.__name__ == "ToolRequest":
+            content = self._v5_tool_content(kwargs.get("mock_context"))
         elif self.scripted_policy_enabled:
             if self._scripted_rng is None:
                 eff_seed = seed if seed is not None else (self.scripted_seed if self.scripted_seed is not None else 42)
@@ -1257,6 +1392,9 @@ class LLMClient:
             timeout_s = kwargs.get("timeout_s", 60.0)
             supports_json_schema = True
 
+        # Test-double context (e.g. detector label for MockLLM detector_copy); never sent to real providers
+        mock_context = kwargs.pop("mock_context", None)
+
         params_sig = {
             "temperature": eff_temp,
             "seed": seed,
@@ -1385,6 +1523,11 @@ class LLMClient:
         def _call_adapter(call_prompt: str) -> Tuple[str, int, int, int]:
             nonlocal retry_count
             call_resp_model = response_model if supports_json_schema else None
+            mock_kwargs = {"mock_context": mock_context} if isinstance(adapter, MockLLM) and mock_context else {}
+            if not isinstance(adapter, MockLLM) and not paid_calls_allowed():
+                raise PaidCallsDisabledError(
+                    f"Refusing real network call via {type(adapter).__name__}: set {PAID_CALLS_ENV_VAR}=1."
+                )
             for attempt in range(eff_max_retries + 1):
                 try:
                     if concurrency_sem:
@@ -1410,8 +1553,14 @@ class LLMClient:
                         timeout_seconds=timeout_s,
                         max_tokens=eff_max_tokens,
                         **clean_kwargs,
+                        **mock_kwargs,
                     )
                 except Exception as exc:
+                    if is_fatal_api_error(exc) and not isinstance(exc, FatalAPIError):
+                        raise FatalAPIError(
+                            f"Fatal API error (HTTP {get_status_code(exc)}) from '{eff_model_name}': {exc}",
+                            status_code=get_status_code(exc),
+                        ) from exc
                     if attempt >= eff_max_retries or not is_retryable_error(exc):
                         raise exc
                     retry_count += 1
@@ -1469,6 +1618,8 @@ class LLMClient:
                     cleaned_retry = clean_code_fences(retry_content)
                     structured_obj = response_model.model_validate_json(cleaned_retry)
                     structured_ok = True
+                except (FatalAPIError, PaidCallsDisabledError, TruncatedOutputError):
+                    raise
                 except Exception as second_val_err:
                     structured_ok = False
                     error_type = "StructuredOutputError"
@@ -1503,7 +1654,10 @@ class LLMClient:
                             order_quantity=order_quantity,
                         )
                     raise StructuredOutputError(
-                        f"Structured output validation failed for model '{eff_model_name}' after retry: {second_val_err}"
+                        f"Structured output validation failed for model '{eff_model_name}' after retry: {second_val_err}",
+                        prompt_tokens=p_tok,
+                        completion_tokens=c_tok,
+                        cached_tokens=cached_tok,
                     ) from second_val_err
 
         elapsed_ms = (time.time() - start_time) * 1000.0

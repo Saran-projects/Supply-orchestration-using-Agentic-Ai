@@ -129,7 +129,9 @@ def test_models_yaml_loading():
     assert glm.price_per_1k_input == 0.000027
     assert glm.price_per_1k_cached_input == 0.000018
     assert glm.price_per_1k_output == 0.00049
-    assert glm.reasoning_tokens == "disabled"
+    # glm-5.3-flash always thinks; the lowest supported effort replaces the ignored "disabled" flag
+    assert glm.reasoning_tokens is None
+    assert glm.reasoning_effort == "low"
 
     # Disabled models with TODO must be permitted
     openai_main = cfg.get_model("openai-main")

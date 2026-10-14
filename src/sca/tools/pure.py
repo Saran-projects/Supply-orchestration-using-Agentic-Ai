@@ -384,6 +384,66 @@ def safe_order_range(
     return (float(low), float(high))
 
 
+def resolve_order_limits(
+    rate_limit_delta: Optional[float] = None,
+    forecast_cap_multiple: Optional[float] = None,
+) -> Tuple[Optional[float], Optional[float]]:
+    """Resolve rate-limit delta and forecast cap multiple, falling back to sim.four_echelon config."""
+    cfg_fe = None
+    try:
+        cfg_fe = get_config().sim.four_echelon
+    except Exception:
+        pass
+    eff_delta = (
+        rate_limit_delta
+        if rate_limit_delta is not None
+        else (getattr(cfg_fe, "rate_limit_delta", None) if cfg_fe else None)
+    )
+    eff_cap_mult = (
+        forecast_cap_multiple
+        if forecast_cap_multiple is not None
+        else (getattr(cfg_fe, "forecast_cap_multiple", None) if cfg_fe else None)
+    )
+    return eff_delta, eff_cap_mult
+
+
+def safe_order_bounds(
+    last_order: Optional[float],
+    forecast_demand: Optional[float],
+    rate_limit_delta: Optional[float] = None,
+    forecast_cap_multiple: Optional[float] = None,
+    capacity_limit: Optional[float] = None,
+    max_order: Optional[float] = None,
+    min_order: float = 0.0,
+) -> Tuple[float, float]:
+    """Exact [low, high] interval that validate_order clips a proposed order into.
+
+    Shared by the LLM prompts (the "Safe Order Range" shown to the model) and validate_order,
+    so the range the model sees is the range that is enforced.
+    """
+    eff_delta, eff_cap_mult = resolve_order_limits(rate_limit_delta, forecast_cap_multiple)
+    low = max(0.0, float(min_order))
+    high = math.inf
+    if eff_delta is not None and last_order is not None:
+        ref_d = (
+            forecast_demand
+            if (forecast_demand is not None and forecast_demand > 0)
+            else max(last_order, 1.0)
+        )
+        band_low, band_high = safe_order_range(last_order, ref_d, eff_delta)
+        low, high = max(low, band_low), band_high
+    ceiling = math.inf
+    if eff_cap_mult is not None and forecast_demand is not None and forecast_demand > 0:
+        ceiling = min(ceiling, eff_cap_mult * forecast_demand)
+    if capacity_limit is not None:
+        ceiling = min(ceiling, float(capacity_limit))
+    if max_order is not None:
+        ceiling = min(ceiling, float(max_order))
+    high = min(high, ceiling)
+    low = min(low, high)
+    return (float(low), float(high))
+
+
 # ---------------------------------------------------------------------------
 # 4. validate_order
 # ---------------------------------------------------------------------------
@@ -418,22 +478,7 @@ def validate_order(
         adjustments_made = False
 
         # Resolve config defaults for delta and cap multiple if not provided in input
-        cfg_fe = None
-        try:
-            cfg_fe = get_config().sim.four_echelon
-        except Exception:
-            pass
-
-        eff_delta = (
-            inp.rate_limit_delta
-            if inp.rate_limit_delta is not None
-            else (getattr(cfg_fe, "rate_limit_delta", None) if cfg_fe else None)
-        )
-        eff_cap_mult = (
-            inp.forecast_cap_multiple
-            if inp.forecast_cap_multiple is not None
-            else (getattr(cfg_fe, "forecast_cap_multiple", None) if cfg_fe else None)
-        )
+        eff_delta, eff_cap_mult = resolve_order_limits(inp.rate_limit_delta, inp.forecast_cap_multiple)
 
         interventions: List[str] = []
 

@@ -25,6 +25,7 @@ seeds: 20                         # Number of random seeds (42..61)
 concurrency:
   max_workers_non_llm: 8          # Multiprocessing/multithreading pool for fast heuristic baselines
   max_workers_llm: 2              # Bounded concurrency for LLM agent calls
+max_fallback_rate: 0.05           # Run invalid + batch halts above this fallback share (see CLAUDE.md)
 
 # Systems to Evaluate
 systems:
