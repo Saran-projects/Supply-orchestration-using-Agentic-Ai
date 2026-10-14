@@ -20,17 +20,11 @@ from sca.dashboard.queries import (
     ECHELONS,
     get_aggregate_negotiation_analytics,
     get_available_runs,
-    get_baselines_20seeds_summary,
     get_conflicting_steps_summary,
-    get_cost_and_reconciliation_data,
     get_decision_details,
-    get_glm_real_comparison_metrics,
-    get_mock_vs_glm_plumbing_metrics,
-    get_scenario_metadata,
-    get_shock_baseline_demand_vs_orders,
     get_step_comparison_s3_vs_s6,
-    load_demand_series_sample,
 )
+from sca.dashboard.results import render_results_page
 from sca.dashboard.styles import SYSTEM_COLORS, get_custom_css
 
 # Page Configuration
@@ -52,14 +46,10 @@ st.sidebar.title("📦 SCA Dashboard")
 st.sidebar.caption("Autonomous Multi-Agent Supply Chain Benchmark")
 
 PAGES = [
-    "1. Overview",
-    "2. Real Data & Scenarios",
-    "3. Baselines (Real)",
-    "4. GLM Real Runs",
-    "5. Orchestrator Inspector",
-    "6. Mock vs GLM",
-    "7. Cost and Plan",
-    "8. Agent Conversations",
+    "Results: Systems 1–6",
+    "Overview",
+    "Orchestrator Inspector",
+    "Agent Conversations",
 ]
 
 selected_page = st.sidebar.radio("Navigate Pages", PAGES, index=0)
@@ -82,9 +72,15 @@ st.sidebar.info("🔒 Offline Execution Mode\nZero API keys required.")
 
 
 # ===========================================================================
+# RESULTS: SYSTEMS 1-6 (default page)
+# ===========================================================================
+if selected_page == "Results: Systems 1–6":
+    render_results_page()
+
+# ===========================================================================
 # PAGE 1: OVERVIEW
 # ===========================================================================
-if selected_page == "1. Overview":
+elif selected_page == "Overview":
     st.title("🏭 SupplyChain Agents (SCA) Benchmark Platform")
     st.markdown(
         "A rigorous, multi-agent evaluation framework testing LLM ordering policies "
@@ -234,187 +230,7 @@ if selected_page == "1. Overview":
 # ===========================================================================
 # PAGE 2: REAL DATA & SCENARIOS
 # ===========================================================================
-elif selected_page == "2. Real Data & Scenarios":
-    st.title("📊 Empirical DataCo Dataset & Scenario Windows")
-    meta = get_scenario_metadata()
-
-    # Overview Metrics
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Records", f"{meta['total_records']:,}")
-    c2.metric("Date Span", f"{meta['date_range'][0]} &rarr; {meta['date_range'][1]}")
-    c3.metric("Continuous Days", f"{meta['total_days']} days")
-    c4.metric("Late Delivery Share", f"{meta['late_delivery_rate'] * 100:.2f}%")
-
-    st.markdown("---")
-    st.markdown("### 1. Delivery Performance & Shipping Lead Times")
-    l_col1, l_col2 = st.columns(2)
-
-    with l_col1:
-        st.markdown("#### Shipping Modes & Empirical Lead Times")
-        modes_df = pd.DataFrame(meta["shipping_modes"])
-        st.dataframe(
-            modes_df[["mode", "share", "orders", "lead_time_mean", "lead_time_std"]].rename(
-                columns={
-                    "mode": "Shipping Mode",
-                    "share": "Share",
-                    "orders": "Order Count",
-                    "lead_time_mean": "Mean Lead Time (d)",
-                    "lead_time_std": "Std Dev (d)",
-                }
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.caption("Standard and Second Class exhibit identical 4.0-day uniform transit distributions.")
-
-    with l_col2:
-        st.markdown("#### Delivery Status Breakdown")
-        status_df = pd.DataFrame(meta["delivery_statuses"])
-        st.dataframe(
-            status_df.rename(columns={"status": "Delivery Status", "share": "Share", "orders": "Orders"}),
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.caption("Over 54.8% of historical shipments encounter delivery delays, necessitating safety buffers.")
-
-    st.markdown("---")
-    st.markdown("### 2. Target SKU: Cleats Demand Time-Series")
-    demand_df = load_demand_series_sample()
-    if not demand_df.empty:
-        d_col = "order_date" if "order_date" in demand_df.columns else "date"
-        q_col = "order_item_quantity" if "order_item_quantity" in demand_df.columns else "demand"
-        st.line_chart(demand_df.set_index(d_col)[q_col])
-        st.caption("Daily demand series for 'Cleats' (1,006 steps) scaled to mean 100.0 units for simulation.")
-
-    st.markdown("---")
-    st.markdown("### 3. 90-Day Scenario Windows")
-    sc_col1, sc_col2, sc_col3 = st.columns(3)
-    for idx, (_s_key, s_data) in enumerate(meta["scenarios"].items()):
-        col_target = [sc_col1, sc_col2, sc_col3][idx]
-        with col_target:
-            st.markdown(
-                f"""
-                <div class="sca-card">
-                    <h4>Scenario: {s_data['name'].upper()}</h4>
-                    <p style="font-size: 0.85rem; color: #94A3B8;">{s_data['description']}</p>
-                    <ul style="font-size: 0.85rem; color: #cbd5e1; padding-left: 20px;">
-                        <li><strong>Window:</strong> {s_data['window'][0]} &rarr; {s_data['window'][1]}</li>
-                        <li><strong>Horizon:</strong> {s_data['horizon_days']} days (Train: {s_data['train_length_days']}d)</li>
-                        <li><strong>Raw Mean:</strong> {s_data['raw_mean']} units</li>
-                        <li><strong>Target Mean:</strong> {s_data['scaled_mean']} units</li>
-                        <li><strong>Coefficient of Variation (CV):</strong> <code>{s_data['cv']}</code></li>
-                    </ul>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-
-# ===========================================================================
-# PAGE 3: BASELINES (REAL)
-# ===========================================================================
-elif selected_page == "3. Baselines (Real)":
-    st.title("📈 Classical Inventory Baselines: (S,s) and EOQ")
-    st.markdown(
-        "Benchmarking classical stochastic inventory heuristics across **20 random seeds** "
-        "(seeds 42 to 61) to establish rigorous empirical performance bounds."
-    )
-
-    baseline_df = get_baselines_20seeds_summary(active_db)
-    if baseline_df.empty:
-        st.warning("No baseline runs found in the active database. Run `make baselines` to generate them.")
-    else:
-        st.markdown("### 1. 20-Seed Performance Distribution (Mean ± Std)")
-        display_cols = [
-            "Policy", "Scenario", "Seeds Count", "Total Cost ($)", "Retailer BW",
-            "Wholesaler BW", "Distributor BW", "Manufacturer BW", "Fill Rate (%)", "Stockout Steps"
-        ]
-        st.dataframe(baseline_df[display_cols], use_container_width=True, hide_index=True)
-
-        st.markdown("---")
-        st.markdown("### 2. Bullwhip Amplification Upstream by Echelon")
-        # Visualizing bullwhip propagation
-        bw_chart_data = []
-        for _, row in baseline_df.iterrows():
-            bw_chart_data.append({
-                "Policy / Scenario": f"{row['Policy']} ({row['Scenario']})",
-                "Retailer": row["raw_retailer_bw"],
-                "Wholesaler": row["raw_wholesaler_bw"],
-                "Distributor": row["raw_distributor_bw"],
-                "Manufacturer": row["raw_manufacturer_bw"],
-            })
-        bw_plot_df = pd.DataFrame(bw_chart_data).set_index("Policy / Scenario")
-        st.bar_chart(bw_plot_df.T)
-        st.caption("Progression of order variance amplification upstream (Retailer &rarr; Manufacturer).")
-
-        st.markdown("---")
-        st.markdown("### 3. Shock Scenario: Customer Demand vs Replenishment Orders (Seed 42)")
-        shock_steps_df = get_shock_baseline_demand_vs_orders(active_db, seed=42)
-        if not shock_steps_df.empty:
-            pivoted_steps = shock_steps_df.pivot(index="step_number", columns="run_id", values="retailer_order")
-            # Add demand series
-            first_run = shock_steps_df["run_id"].iloc[0]
-            pivoted_steps["Customer Demand"] = shock_steps_df[shock_steps_df["run_id"] == first_run].set_index("step_number")["demand_units"]
-            st.line_chart(pivoted_steps)
-            st.caption("Retailer order responses during sudden shock demand spikes and post-shock inventory bullwhips.")
-
-
-# ===========================================================================
-# PAGE 4: GLM REAL RUNS
-# ===========================================================================
-elif selected_page == "4. GLM Real Runs":
-    st.title("🤖 GLM Real Runs: Systems 3 & 6 vs Baselines (Seed 42)")
-
-    # Mandatory Scientific Disclaimer Banner
-    st.markdown(
-        """
-        <div class="sca-banner-warning">
-            ⚠️ <strong>METHODOLOGICAL NOTE:</strong> Single runs (n=1 per cell): descriptive case studies,
-            not statistical findings. Never rank n=1 results as winners.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    glm_metrics_df = get_glm_real_comparison_metrics(active_db, seed=42)
-    if glm_metrics_df.empty:
-        st.warning("No completed seed 42 runs found in database. Run `python scripts/run_shock_glm_experiment.py` first.")
-    else:
-        st.markdown("### Comprehensive Evaluation Matrix (Seed 42, Shock Scenario)")
-        st.dataframe(glm_metrics_df, use_container_width=True, hide_index=True)
-
-        st.caption(
-            "Values marked as 'n/a' indicate metrics that do not apply to that architecture "
-            "(e.g., negotiation rounds for single-agent or classical heuristics, token costs for heuristics)."
-        )
-
-        st.markdown("---")
-        st.markdown("### Key Observations (Descriptive Case Study)")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown(
-                """
-                **System 3 (Single Agent LLM):**
-                - Employs zero inter-echelon coordination; decisions rely entirely on local state and prompt reasoning.
-                - Experienced 0 fallbacks and 97.5% instruction-following adherence on GLM-5.3-Flash.
-                - Generated high reasoning token volume (average ~2,500 total tokens per decision).
-                """
-            )
-        with col_b:
-            st.markdown(
-                """
-                **System 6 (Orchestrated Multi-Agent):**
-                - Orchestrator detected proposal conflicts and successfully executed bounded &le;2 round negotiations.
-                - In consensus steps, skipped negotiation entirely, saving token budget.
-                - Maintained 100% tool-choice accuracy and parameter adherence across specialized agents.
-                """
-            )
-
-
-# ===========================================================================
-# PAGE 5: ORCHESTRATOR INSPECTOR
-# ===========================================================================
-elif selected_page == "5. Orchestrator Inspector":
+elif selected_page == "Orchestrator Inspector":
     st.title("🎯 Orchestrator Decision Inspector")
     st.markdown("Inspect real GLM negotiation messages, proposals, conflict checks, and order validation for any step.")
 
@@ -436,102 +252,7 @@ elif selected_page == "5. Orchestrator Inspector":
 # ===========================================================================
 # PAGE 6: MOCK VS GLM
 # ===========================================================================
-elif selected_page == "6. Mock vs GLM":
-    st.title("🔬 MockLLM vs GLM-5.3-Flash: Reliability & Plumbing")
-
-    # Mandatory Banner
-    st.markdown(
-        """
-        <div class="sca-banner-info">
-            ℹ️ <strong>CONTROL NOTE:</strong> MockLLM is a scripted control, not an LLM.
-            Comparing system plumbing, latency overhead, fallback resilience, and structured schema handling.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    plumbing_df = get_mock_vs_glm_plumbing_metrics(active_db)
-    if plumbing_df.empty:
-        st.warning("Insufficient comparison data between mock and real runs.")
-    else:
-        st.markdown("### Plumbing & Robustness Comparison Matrix")
-        st.dataframe(plumbing_df, use_container_width=True, hide_index=True)
-
-        st.markdown("---")
-        st.markdown("### Technical Observations")
-        st.markdown(
-            """
-            1. **Fallback Resilience:** Both MockLLM and real GLM-5.3-Flash runs exhibited **0.0% fallback rates**, confirming robust Pydantic schema validation and automatic retry handlers.
-            2. **Structured Output Adherence:** GLM-5.3-Flash parsed valid `OrderDecision` and `NegotiationResponse` schemas cleanly on the first attempt with 100% reliability.
-            3. **Latency Profile:** Real GLM API calls averaged ~8,000–15,000 ms per step (under 60 RPM limits), compared to near-zero (<1 ms) execution in MockLLM.
-            """
-        )
-
-
-# ===========================================================================
-# PAGE 7: COST AND PLAN
-# ===========================================================================
-elif selected_page == "7. Cost and Plan":
-    st.title("💰 Token Budget, Real Spend & Experiment Plan")
-
-    cost_data = get_cost_and_reconciliation_data(active_db)
-
-    # 1. Reconciliation Summary
-    st.markdown("### 1. Spend Reconciliation vs Isoquant Console")
-    r1, r2, r3, r4 = st.columns(4)
-    r1.metric("Isoquant Console Billed", f"${cost_data['console_billed_usd']:.2f} USD")
-    r2.metric("All-Time Logged Spend", f"${cost_data['all_time_logged_usd']:.4f} USD")
-    r3.metric("Incremental Variance", f"${cost_data['variance_usd']:+.4f} USD")
-    r4.metric("Coverage Ratio", f"{cost_data['coverage_ratio'] * 100:.1f}%")
-
-    st.caption(
-        "Initial historical baseline was $0.20634 USD (~$0.21 console billed). "
-        "Recent 30-step shock runs added $0.23620 USD to the logged total."
-    )
-
-    st.markdown("---")
-    st.markdown("### 2. Measured vs Estimated Tokens per Decision")
-    tm_df = cost_data["token_measurements"]
-    st.dataframe(
-        tm_df.rename(columns={
-            "system": "System",
-            "est_in": "Est. Input",
-            "measured_in": "Measured Input",
-            "in_ratio": "Input Ratio (Meas/Est)",
-            "est_out": "Est. Output",
-            "measured_out": "Measured Output",
-            "out_ratio": "Output Ratio (Meas/Est)",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.caption(
-        "Notice that System 6 measured input tokens are only **0.07× of initial estimates** "
-        "because consensus shortcut skips all negotiation LLM calls on steps without conflicts."
-    )
-
-    st.markdown("---")
-    st.markdown("### 3. Planned Experiment Grid & Projected Budget")
-    pg_df = cost_data["planned_grid"]
-    st.dataframe(
-        pg_df.rename(columns={
-            "system": "System",
-            "architecture": "Architecture",
-            "cost_per_decision": "Est. Cost / Dec ($)",
-            "cost_per_90step_run": "Projected Cost / 90-step Run ($)",
-            "full_grid_cost_15runs": "15-Run Grid Cost ($)",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
-    tot_plan_cost = pg_df["full_grid_cost_15runs"].sum()
-    st.info(f"**Total Projected Grid Budget (60 Runs):** ${tot_plan_cost:.2f} USD (Across S3, S4, S5, S6 over 3 scenarios and 5 seeds).")
-
-
-# ===========================================================================
-# PAGE 8: AGENT CONVERSATIONS
-# ===========================================================================
-elif selected_page == "8. Agent Conversations":
+elif selected_page == "Agent Conversations":
     st.title("💬 Agent Conversations & Negotiation Dialogue")
     st.markdown("Deep interactive trace of multi-agent debate, tool calls, groundedness verifications, and comparison toggles.")
 
